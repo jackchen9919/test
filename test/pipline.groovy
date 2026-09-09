@@ -30,8 +30,9 @@ pipeline {
                     checkout scm
                 }
                 script {
-                    // TODO(部署前必须确认): 换成Astrox在Jenkins里真实配置的GitHub凭据ID，不要沿用模板里的占位值
-                    repo_credentials_id = 'GITHUB_CREDENTIALS_ID_PLACEHOLDER'
+                    // TODO(部署前必须确认): 业务代码仓库若是私有仓库，换成Astrox在Jenkins里真实配置的GitHub凭据ID；
+                    // 公开仓库（如当前测试用的jackchen9919/test）留空即可，Git插件对空credentialsId按匿名checkout处理
+                    repo_credentials_id = ''
                 }
                 checkout([$class: 'GitSCM',
                           branches: [[name: "${params.BRANCH_TAG}"]],

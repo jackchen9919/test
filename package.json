@@ -1,0 +1,8 @@
+{
+  "name": "apisix-route-test-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "mkdir -p dist && echo '<h1>apisix-route-test OK</h1>' > dist/index.html"
+  }
+}

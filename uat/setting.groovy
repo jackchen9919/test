@@ -22,4 +22,19 @@
         "min_replicas": "1",
         "max_replicas": "100",
     },
+
+    "apisix-route-test": {
+        "app_name": "apisix-route-test",
+        "project": "apisix-route-test",
+        "project_type": "nginx",
+        "replicas": "1",
+        "http_port": "8080",
+        "actuator_port": "8080",
+        "ingress_hosts": "apisix-route-test-uat.astroxs.com",
+        "ingress_paths": "/*",
+        "no_ingress": "false",
+        "websocket_port": "null",
+        "skywalking_enabled": "false",
+        "namespaces": "apisix-route-test-uat",
+    },
 }
