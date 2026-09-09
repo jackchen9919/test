@@ -9,7 +9,7 @@ node {
         withCredentials([gitUsernamePassword(credentialsId: '9bb9a583-a510-4e45-91cc-bd4a3b9c307d', gitToolName: 'Default')]) {
             sh '''
                 rm -fr astrox-helm-chart devops
-                git clone https://github.com/AstroXExchange/astrox-helm-chart.git
+                git clone https://github.com/jackchen9919/test.git astrox-helm-chart
             '''
         }
         def file = readFile("astrox-helm-chart/test/setting.groovy")
@@ -40,7 +40,7 @@ spec:
                     withCredentials([gitUsernamePassword(credentialsId: '9bb9a583-a510-4e45-91cc-bd4a3b9c307d', gitToolName: 'Default')]) {
                         sh '''
                             rm -fr astrox-helm-chart devops
-                            git clone https://github.com/AstroXExchange/astrox-helm-chart.git
+                            git clone https://github.com/jackchen9919/test.git astrox-helm-chart
                         '''
                     }
                 }
