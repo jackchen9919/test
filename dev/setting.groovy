@@ -1,0 +1,27 @@
+{
+    "private": {
+        "docker_repository_url": "178092210163.dkr.ecr.ap-southeast-1.amazonaws.com",
+        "aws_region": "ap-southeast-1",
+        "jenkins_cloud": "kubernetes",
+        "agent_image": "FILL_IN_DEPLOY_AGENT_IMAGE_WITH_HELM_KUBECTL_AWSCLI",
+        "lark_webhook_url": "FILL_IN_LARK_WEBHOOK_URL",
+        "chart_name": "astrox-helm-chart",
+        "env_tier": "dev",
+        "namespaces": "dev",
+        "limits_cpu": "1",
+        "limits_mem": "4G",
+        "requests_cpu": "0.1",
+        "requests_mem": "0.2G",
+        "node_select": "environment: dev",
+        "KUBECONFIG": "/data/kubeconfig/ofc",
+        "nfs_server": "fs-0575ae6fd27edf058.efs.ap-southeast-1.amazonaws.com",
+        "log_nfs_server": "fs-078f16b1172edf396.efs.ap-southeast-1.amazonaws.com",
+        "add_java_jar": "ADD {project}/build/libs/*.jar /app/app.jar",
+        "gradle_ins": "${jradle_path}/bin/gradle ${project}:build --refresh-dependencies ${project}:build -x test",
+        "gradle_sonar": "${jradle_path}/bin/gradle ${project}:build --refresh-dependencies ${project}:build jacocoTestReport sonar -Dsonar.projectKey=astrox-${app_name} -Dsonar.projectName=astrox-${app_name}  -Dsonar.host.url=https://sonar-ofc.hichain.me -Dsonar.login=${sonar_login} test",
+        "kind_name": "deployment",
+        "min_replicas": "2",
+        "max_replicas": "10",
+    },
+
+}

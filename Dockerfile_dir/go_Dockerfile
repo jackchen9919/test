@@ -1,0 +1,9 @@
+FROM golang:1.24
+
+ENV GOPROXY https://goproxy.cn,direct
+WORKDIR $GOPATH/dex-go-backend
+COPY . $GOPATH/dex-go-backend
+RUN go build .
+
+EXPOSE 8000
+ENTRYPOINT ["./dex-go-backend"]

@@ -1,0 +1,4 @@
+FROM bitnamilegacy/node:16.15.1-debian-11-r1
+RUN npm install -g yarn
+ADD . /app/
+CMD yarn run start

@@ -1,0 +1,6 @@
+FROM bitnamilegacy/nginx:1.21-debian-11
+USER root
+RUN rm -rf /app/*
+ADD customize_server.conf /opt/bitnami/nginx/conf/server_blocks/
+USER 1001
+ADD dist /app/

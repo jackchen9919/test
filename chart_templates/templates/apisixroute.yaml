@@ -1,0 +1,34 @@
+{{- if .Values.ingress }}
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: {{ .Values.appname }}
+  namespace: {{ .Values.namespace }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  http:
+  {{- range $i, $host := .Values.ingress.hosts }}
+  - name: {{ $.Values.appname }}-{{ $i }}
+    match:
+      hosts:
+        - {{ $host }}
+      paths:
+        {{- range $path := $.Values.ingress.paths }}
+        - {{ $path }}
+        {{- end }}
+    backends:
+      - serviceName: {{ $.Values.appname }}
+        servicePort: {{ $.Values.probe.port }}
+    plugins:
+      - name: proxy-rewrite
+        enable: true
+        config:
+          host: {{ $host }}
+          headers:
+            set:
+              X-Forwarded-Host: {{ $host }}
+              X-Forwarded-Port: "443"
+              X-Forwarded-Proto: "https"
+              X-Forwarded-Ssl: "on"
+  {{- end }}
+{{- end }}

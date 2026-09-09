@@ -1,0 +1,181 @@
+{{- if eq .Values.kind "Deployment" }}
+kind: Deployment
+{{- else }}
+kind: StatefulSet
+{{- end }}
+apiVersion: apps/v1
+metadata:
+  name: {{ .Values.appname }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    appname: {{ .Values.appname }}
+    {{- if .Values.skywalking.enabled }}
+    project-type: {{ .Values.project_type }}
+    {{- end }}
+spec:
+  {{- if eq .Values.kind "StatefulSet" }}
+  serviceName: {{ .Values.appname }}  # 只有 StatefulSet 需要这个
+  {{- end }}
+  progressDeadlineSeconds: 200
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      appname: {{ .Values.appname }}
+      {{- if .Values.skywalking.enabled }}
+      project-type: {{ .Values.project_type }}
+      {{- end }}
+  template:
+    metadata:
+      labels:
+        appname: {{ .Values.appname }}
+        {{- if .Values.skywalking.enabled }}
+        project-type: {{ .Values.project_type }}
+        {{- end }}
+      {{- if .Values.skywalking_enabled }}
+      annotations:
+        app-version: {{ .Values.version | quote }}
+        co.elastic.logs/enabled: 'true'
+        co.elastic.logs/multiline.match: after
+        co.elastic.logs/multiline.negate: 'true'
+        co.elastic.logs/multiline.pattern: '^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}.\d{3}'
+      {{- end }}
+    spec:
+      {{- if .Values.skywalking.enabled }}
+      initContainers:
+      - name: agent-container
+        image: apache/skywalking-java-agent:8.9.0-alpine
+        volumeMounts:
+          - name: skywalking-agent
+            mountPath: /agent
+        command: [ "/bin/sh" ]
+        args: [ "-c", "cp -R /skywalking/agent /agent/;chown 33.33 -R /agent/" ]
+      {{- end }}
+      containers:
+      - image: {{ .Values.image }}
+        name: {{ .Values.appname }}
+        env:
+        - name: MaxRAMPercentage
+          value: {{ .Values.MaxRAMPercentage | default "75.0" | quote }}
+        {{- with .Values.MinRAMPercentage }}
+        - name: MinRAMPercentage
+          value: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.MetaspaceSize }}
+        - name: MetaspaceSize
+          value: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.DEBUG }}
+        - name: DEBUG
+          value: {{ . | quote }}
+        {{- end }}
+        {{- if .Values.skywalking.enabled }}
+        - name: SW_AGENT_NAMESPACE
+          value: "{{ .Values.namespace }}"
+        - name: SW_AGENT_NAME
+          value: "{{ .Values.namespace }}::{{ .Values.appname }}"
+        - name: SW_AGENT_COLLECTOR_BACKEND_SERVICES
+          value: "{{ .Values.skywalking.server }}"
+        - name: JAVA_OPTS
+          value: "-javaagent:/skywalking/agent/skywalking-agent.jar=agent.instance_name=$HOSTNAME"
+        - name: SW_AGENT_PLUGIN_KAFKA_CONSUMER_ENABLE
+          value: "false"
+        - name: SW_AGENT_PLUGIN_KAFKA_PRODUCER_ENABLE
+          value: "false"
+        - name: SW_LOGGING_MAX_FILE_SIZE
+          value: "10485760"  # 10MB
+        - name: SW_LOGGING_MAX_HISTORY_FILES
+          value: "3"         # 只保留3个历史文件
+        - name: SW_LOGGING_LEVEL
+          value: "WARN"
+        - name: SW_AGENT_EXCLUDE_PLUGINS
+          value: "kafka-2.x,kafka-reporter-plugin"
+        {{- end }}
+        imagePullPolicy: Always
+        securityContext:
+          capabilities:
+            add: ["SYS_PTRACE"]
+        ports:
+          {{- range $i := .Values.ports }}
+          - containerPort: {{ $i.port }}
+            protocol: {{ $i.protocol }}
+            name: {{ $i.name }}
+          {{- end }}
+        livenessProbe:
+          failureThreshold: 20
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: {{ .Values.probe.port }}
+          timeoutSeconds: 5
+        readinessProbe:
+          failureThreshold: 20
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: {{ .Values.probe.port }}
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: {{ .Values.limits.cpu }}
+            memory: {{ .Values.limits.memory }}
+          requests:
+            cpu: {{ .Values.requests.cpu }}
+            memory: {{ .Values.requests.memory }}
+      {{- with .Values.nfs_server }}
+        volumeMounts:
+        - name: config
+          mountPath: /data/config/
+        - name: datalog
+          mountPath: /data/log/
+        - name: skywalking-agent
+          mountPath: /skywalking
+      {{- end }}
+      restartPolicy: Always
+      {{- if .Values.nodeSelector }}
+      nodeSelector:
+      {{- end }}
+        {{- range $k,$v := .Values.nodeSelector }}
+        {{ $k }}: {{ $v }}
+        {{- end }}
+      {{- if .Values.tolerations }}
+      tolerations:
+      {{- end }}
+        {{- range $i := .Values.tolerations }}
+        - key: {{ $i.key }}
+          value: {{ $i.value }}
+          effect: {{ $i.effect }}
+        {{- end }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: appname
+                  operator: In
+                  values:
+                  - {{ .Values.appname }}
+              topologyKey: kubernetes.io/hostname
+      volumes:
+      {{- if .Values.nfs_server }}
+      - name: config
+        nfs:
+          path: /java-config/{{ .Values.namespace }}/{{ .Values.appname }}
+          server: {{ .Values.nfs_server }}
+          readOnly: true
+      {{- end }}
+      {{- if .Values.log_nfs_server }}
+      - name: datalog
+        nfs:
+          path: /{{ .Values.namespace }}/{{ .Values.appname }}
+          server: {{ .Values.log_nfs_server }}
+      {{- end }}
+      {{- if .Values.skywalking.enabled }}
+      - name: skywalking-agent
+        emptyDir:
+          sizeLimit: 1000Mi
+      {{- end }}

@@ -1,0 +1,2 @@
+FROM {docker_repository_url}/ops/java8:v1.10
+{add_java_jar}

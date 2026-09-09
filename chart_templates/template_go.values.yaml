@@ -1,0 +1,78 @@
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+kind: Deployment
+replicaCount: ${replicas}
+appname: ${app_name}
+version: ${commit_id}
+image: ${image_url}:${image_tag}
+namespace: ${namespaces}
+project_type: ${project_type}
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: "${app_name}"
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+ports:
+  - name: http
+    protocol: TCP
+    port: ${http_port}
+probe:
+  port: ${http_port}
+
+ingress:
+  className: apisix
+  hosts: ["${ingress_hosts}"]
+  paths: ["${ingress_paths}"]
+
+MaxRAMPercentage: "75.0"
+skywalking:
+  enabled: ${skywalking_enabled}
+  server: skywalking-oap.skywalking:11800
+nfs_server: {}
+log_nfs_server: {}
+
+limits:
+  cpu: ${limits_cpu}
+  memory: ${limits_mem}
+requests:
+  cpu: ${requests_cpu}
+  memory: ${requests_mem}
+
+autoscaling:
+  enabled: false
+  minReplicas: ${min_replicas}
+  maxReplicas: ${max_replicas}
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector:
+  ${node_select}
+
+
+tolerations:
+  - key: environment
+    value: ${env_tier}
+    effect: "NoExecute"
+
+affinity: {}
