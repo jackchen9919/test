@@ -3,7 +3,7 @@
         "docker_repository_url": "178092210163.dkr.ecr.ap-southeast-1.amazonaws.com",
         "aws_region": "ap-southeast-1",
         "jenkins_cloud": "pre-eks",
-        "agent_image": "FILL_IN_DEPLOY_AGENT_IMAGE_WITH_HELM_KUBECTL_AWSCLI",
+        "agent_image": "alpine/k8s:1.28.4",
         "lark_webhook_url": "FILL_IN_LARK_WEBHOOK_URL",
         "chart_name": "astrox-helm-chart",
         "env_tier": "uat",

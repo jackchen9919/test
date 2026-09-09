@@ -11,7 +11,7 @@
         "gradle_ins": "${jradle_path}/bin/gradle ${project}:clean --refresh-dependencies ${project}:build -x test",
 
         "env_tier": "test",
-        "deploy_agent_image": "FILL_IN_DEPLOY_AGENT_IMAGE_WITH_HELM_KUBECTL_AWSCLI",
+        "deploy_agent_image": "alpine/k8s:1.28.4",
         "node_select": "environment: test",
         "KUBECONFIG": "/data/kubeconfig/ofc",
         "nfs_server": "fs-0575ae6fd27edf058.efs.ap-southeast-1.amazonaws.com",
