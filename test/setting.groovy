@@ -1,6 +1,6 @@
 {
     "private": {
-        "docker_repository_url": "178092210163.dkr.ecr.ap-southeast-1.amazonaws.com",
+        "docker_repository_url": "815644216915.dkr.ecr.ap-southeast-1.amazonaws.com",
         "aws_region": "ap-southeast-1",
         "jenkins_cloud": "kubernetes",
         "agent_image": "178092210163.dkr.ecr.ap-southeast-1.amazonaws.com/jenkins-agent-jdk17-maven:20260629-v9",
