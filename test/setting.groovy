@@ -28,7 +28,7 @@
     "apisix-route-test": {
         "github_url": "https://github.com/jackchen9919/test.git",
         "node_ins": "npm run build",
-        "nodejs_version": "16.14.1",
+        "nodejs_version": "NodeJS 16.14.1",
         "app_name": "apisix-route-test",
         "project": "apisix-route-test",
         "project_type": "nginx",
