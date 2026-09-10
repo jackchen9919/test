@@ -109,6 +109,7 @@ node('ofc-hk-bastion') {
                 stage('ofc helm upgrade') {
                     withCredentials([file(credentialsId: env.kubeconfig_credential_id, variable: 'KUBECONFIG')]) {
                         sh '''
+                            echo "target cluster: $(kubectl config current-context)"
                             helm list -n ${namespaces}|grep ${app_name} &> /dev/null
                             helm upgrade ${app_name} --install -n ${namespaces} ./${chart_name}/${env_tier}
                         '''
