@@ -1,22 +1,23 @@
 # test
 
-test目录下有**两个完全独立、互不影响的job**，都读同一份 `test/setting.groovy`。整体模型和字段说明见根目录 `README.md`。
+test目录下只有**一个job**（`test/astrox.Jenkinsfile`），构建和部署合并在一起，读同一份 `test/setting.groovy`。整体模型和字段说明见根目录 `README.md`。
 
-## 构建job（`test/astrox.Jenkinsfile` + `test/pipline.groovy`）
+## 构建+部署job（`test/astrox.Jenkinsfile`）
 
-共享构建job：checkout GitHub业务代码、build、push镜像，不做helm部署。
+用 `DO_BUILD` 参数（Build with Parameters里的一个勾选框）决定这一次跑不跑构建，构建不是单独的job/按钮，只是这个job里的一个开关：
 
-`test/setting.groovy` 的子字典需要 build 字段（`github_url`/`project`/`project_type`/`maven_ins`/`node_ins`/`nodejs_version`等）。build完在"Print image tag"步骤打印出镜像tag——本目录部署job、以及dev/uat对应部署job默认（`SPECIFY_TAG`不勾选）都会自动去ECR取这个服务最新push的tag，不需要再手动复制；这里打印出来的tag只在要回滚/部署指定历史版本时，才需要勾选`SPECIFY_TAG`并填到部署job的 `IMAGE_TAG` 参数里。构建工具是 buildah（显式 `aws ecr login`），不是 docker。agent镜像用`private.agent_image`（JDK17/Maven/buildah）。
+- **勾选 `DO_BUILD`**：checkout GitHub业务代码、build、push镜像（走 `test/pipline.groovy`），再接着做helm部署。日常提交新代码走这个。
+- **不勾选 `DO_BUILD`**：跳过构建，直接部署（走 `test/deploy_pipline.groovy`）。默认（`SPECIFY_TAG`不勾选）会自动去ECR取该服务最新一次push的tag部署；只有要回滚/部署指定历史版本时，才勾选`SPECIFY_TAG`并填`IMAGE_TAG`。
 
-## 部署job（`test/deploy.Jenkinsfile` + `test/deploy_pipline.groovy`）
+构建工具是 buildah（显式 `aws ecr login`），不是 docker。构建时agent镜像用`private.agent_image`（JDK17/Maven/buildah规格）；不构建只部署时用`private.deploy_agent_image`（helm/kubectl/awscli规格），两者按`DO_BUILD`的值二选一。
 
-test环境的独立helm部署job，只做部署，不checkout/build/push——结构照抄dev/uat的纯部署模式（`SPECIFY_TAG`+`IMAGE_TAG`参数、Update values.yaml→helm upgrade→rollout status自动回滚→飞书通知）。跟上面构建job用**同一份`test/setting.groovy`**，所以不用像dev/uat那样跨文件读`test`的namespaces——直接用本文件里的`namespaces`覆盖值，即是构建job实际push镜像时用的那个namespace。
+`test/setting.groovy` 的子字典需要build+部署字段都写在同一个字典里：
 
-`test/setting.groovy` 的子字典（跟build字段写在同一个字典里）还需要补部署相关字段：
 | 字段 | 说明 |
 |---|---|
-| `app_name` | 镜像名/应用名，跟build字典共用同一个key |
-| `project` | helm templates里的`{project}`命名前缀，跟build字典共用同一个key |
+| `github_url`/`node_ins`/`nodejs_version`等 | 仅`DO_BUILD`勾选时用，业务代码checkout/构建参数 |
+| `app_name` | 镜像名/应用名 |
+| `project` | helm templates里的`{project}`命名前缀 |
 | `project_type` | java8/newexchange_java8/java17_maven/nginx/go/nodejs/nodejs_explore/python |
 | `replicas` | 初始副本数 |
 | `http_port` / `actuator_port` | 服务端口/健康检查端口 |
@@ -26,6 +27,6 @@ test环境的独立helm部署job，只做部署，不checkout/build/push——�
 | `namespaces`（可选） | 缺省沿用 `private.namespaces="test"` |
 | `min_replicas`/`max_replicas`（可选） | HPA副本数上下限，缺省沿用 `private.min_replicas`/`private.max_replicas` |
 
-`private`块新增的部署相关字段：`env_tier`（固定`"test"`）、`deploy_agent_image`（部署agent镜像，只需要helm/kubectl/awscli，跟build用的`agent_image`分开，当前是占位符`FILL_IN_DEPLOY_AGENT_IMAGE_WITH_HELM_KUBECTL_AWSCLI`需要用户替换成真实镜像）、`node_select`、`KUBECONFIG`、`nfs_server`/`log_nfs_server`、`limits_cpu`/`limits_mem`/`requests_cpu`/`requests_mem`、`kind_name`、`min_replicas`/`max_replicas`。
+`private`块里的部署相关字段：`env_tier`（固定`"test"`）、`deploy_agent_image`、`node_select`、`kubeconfig_credential_id`（Jenkins里"Secret file"类型凭据的ID，凭据内容是能访问目标EKS集群的kubeconfig文件——不是文件路径字符串，job里通过`withCredentials([file(...)])`把凭据内容落到临时文件再交给helm/kubectl）、`nfs_server`/`log_nfs_server`、`limits_cpu`/`limits_mem`/`requests_cpu`/`requests_mem`、`kind_name`、`min_replicas`/`max_replicas`。
 
-跟dev/uat/prod一样，部署job的`Update values.yaml`阶段会从仓库根目录的`chart_templates/`共享目录拷贝chart文件后再渲染，详见根`README.md`的"`chart_templates/`"一节。
+跟dev/uat/prod一样，`Update values.yaml`阶段会从仓库根目录的`chart_templates/`共享目录拷贝chart文件后再渲染，详见根`README.md`的"`chart_templates/`"一节。

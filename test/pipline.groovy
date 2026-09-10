@@ -94,14 +94,15 @@ pipeline {
                     }
                     // build and pushing — 这个tag就是dev/uat部署job要填的IMAGE_TAG
                     env.image_tag = "${tagAfterSlash}-${commit_id}-${BUILD_ID}"
-                    // ECR仓库若不存在则动态创建；显式ECR登录（buildah不像docker那样有daemon级凭据缓存，每次都要登录）
+                    // ECR仓库若不存在则动态创建；显式ECR登录
+                    // 构建工具改用docker（jenkins-sg.hichain.me的静态节点没装buildah，但jenkins用户已在docker组里）
                     sh """
                         aws ecr describe-repositories --repository-names ${namespaces}/${app_name} --region ${aws_region} || \\
                             aws ecr create-repository --repository-name ${namespaces}/${app_name} --region ${aws_region} \\
                             --image-scanning-configuration scanOnPush=true --encryption-configuration encryptionType=AES256
-                        aws ecr get-login-password --region ${aws_region} | buildah login --username AWS --password-stdin ${docker_repository_url}
-                        buildah --storage-driver=vfs bud -t ${image_url}:${image_tag} .
-                        buildah --storage-driver=vfs push ${image_url}:${image_tag}
+                        aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${docker_repository_url}
+                        docker build -t ${image_url}:${image_tag} .
+                        docker push ${image_url}:${image_tag}
                     """
                 }
             }

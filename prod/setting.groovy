@@ -4,7 +4,6 @@
         "aws_region": "FILL_IN_REGION",
         "jenkins_cloud": "FILL_IN_PROD_JENKINS_CLOUD",
         "agent_image": "FILL_IN_PROD_AGENT_IMAGE",
-        "lark_webhook_url": "FILL_IN_LARK_WEBHOOK_URL",
         "chart_name": "astrox-helm-chart",
         "env_tier": "prod",
         "namespaces": "prod25",
@@ -22,5 +21,6 @@
         "kind_name": "deployment",
         "min_replicas": "2",
         "max_replicas": "10",
+        "no_ingress": "false",
     },
 }

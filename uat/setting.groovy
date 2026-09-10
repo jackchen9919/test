@@ -4,7 +4,6 @@
         "aws_region": "ap-southeast-1",
         "jenkins_cloud": "pre-eks",
         "agent_image": "alpine/k8s:1.28.4",
-        "lark_webhook_url": "FILL_IN_LARK_WEBHOOK_URL",
         "chart_name": "astrox-helm-chart",
         "env_tier": "uat",
         "namespaces": "uat",
@@ -13,7 +12,7 @@
         "requests_cpu": "0.1",
         "requests_mem": "0.2G",
         "node_select": "environment: uat",
-        "KUBECONFIG": "/data/kubeconfig/ofc",
+        "kubeconfig_credential_id": "ofc-test",
         "nfs_server": "fs-0575ae6fd27edf058.efs.ap-southeast-1.amazonaws.com",
         "log_nfs_server": "fs-078f16b1172edf396.efs.ap-southeast-1.amazonaws.com",
         "add_java_jar": "ADD {project}/build/libs/*.jar /app/app.jar",
@@ -21,6 +20,7 @@
         "kind_name": "deployment",
         "min_replicas": "1",
         "max_replicas": "100",
+        "no_ingress": "false",
     },
 
     "apisix-route-test": {

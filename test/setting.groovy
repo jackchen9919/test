@@ -4,7 +4,6 @@
         "aws_region": "ap-southeast-1",
         "jenkins_cloud": "kubernetes",
         "agent_image": "178092210163.dkr.ecr.ap-southeast-1.amazonaws.com/jenkins-agent-jdk17-maven:20260629-v9",
-        "lark_webhook_url": "FILL_IN_LARK_WEBHOOK_URL",
         "chart_name": "astrox-helm-chart",
         "namespaces": "test",
         "add_java_jar": "ADD {project}/build/libs/*.jar /app/app.jar",
@@ -13,7 +12,7 @@
         "env_tier": "test",
         "deploy_agent_image": "alpine/k8s:1.28.4",
         "node_select": "environment: test",
-        "KUBECONFIG": "/data/kubeconfig/ofc",
+        "kubeconfig_credential_id": "ofc-test",
         "nfs_server": "fs-0575ae6fd27edf058.efs.ap-southeast-1.amazonaws.com",
         "log_nfs_server": "fs-078f16b1172edf396.efs.ap-southeast-1.amazonaws.com",
         "limits_cpu": "1",
@@ -23,6 +22,7 @@
         "kind_name": "deployment",
         "min_replicas": "1",
         "max_replicas": "2",
+        "no_ingress": "false",
     },
 
     "apisix-route-test": {

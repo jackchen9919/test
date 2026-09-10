@@ -1,37 +1,10 @@
 import groovy.json.JsonSlurper
 //jenkins agent label
 //项目主函数astrox.Jenkinsfile，读取setting.groovy配置信息，加载公共jenkins-pipline
-//prod是唯一"build+deploy在同一个job里"的环境（跟test/dev/uat不同），所以prod的agent镜像必须同时具备构建工具链（JDK17/Maven/buildah）和部署工具链（helm/kubectl/awscli）——需要prod/setting.groovy的agent_image指向这样一个"全能"镜像
-//先用内置静态agent clone一次配置仓库，只为了读出该用哪个K8s cloud/哪个agent镜像
-node {
-    stage('Resolve build agent') {
-        withCredentials([gitUsernamePassword(credentialsId: '9bb9a583-a510-4e45-91cc-bd4a3b9c307d', gitToolName: 'Default')]) {
-            sh '''
-                rm -fr astrox-helm-chart devops
-                git clone https://github.com/jackchen9919/test.git astrox-helm-chart
-            '''
-        }
-        def file = readFile("astrox-helm-chart/prod/setting.groovy")
-        def jsonSlurper = new JsonSlurper()
-        def code_info = jsonSlurper.parseText(file)
-        env.jenkins_cloud = (code_info.private.jenkins_cloud).toString()
-        env.agent_image = (code_info.private.agent_image).toString()
-    }
-}
-
-podTemplate(cloud: "${jenkins_cloud}", yaml: """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: build
-    image: ${agent_image}
-    command: ['cat']
-    tty: true
-"""
-) {
-    node(POD_LABEL) {
-        container('build') {
+//prod是唯一"build+deploy在同一个job里"的环境（跟test/dev/uat不同），所以静态节点上必须同时具备构建工具链（JDK17/Maven/docker）和部署工具链（helm/kubectl/awscli）
+//jenkins-sg.hichain.me 没装Kubernetes插件/没配置任何Cloud，只有一个静态节点（标签ofc-hk-bastion），agent直接跑在这个静态节点上，不再用K8s动态pod agent
+//该节点没装buildah，构建工具已改用docker（见prod/pipline.groovy），节点上的jenkins用户已在docker组里
+node('ofc-hk-bastion') {
             try {
                 //此方案用来解决checkout scm helm拉取分支报错问题
                 stage('clone helm chart') {
@@ -72,7 +45,6 @@ spec:
                     env.nfs_server = (code_info.private.nfs_server).toString()
                     env.KUBECONFIG = (code_info.private.KUBECONFIG).toString()
                     env.log_nfs_server = (code_info.private.log_nfs_server).toString()
-                    env.lark_webhook_url = (code_info.private.lark_webhook_url).toString()
                     //服务级可覆盖，缺省沿用环境默认值
                     env.namespaces = (code_info."${micro_key}".namespaces) ?: (code_info.private.namespaces)
 
@@ -88,7 +60,7 @@ spec:
                     env.http_port = (code_info."${micro_key}".http_port).toString()
                     env.ingress_hosts = (code_info."${micro_key}".ingress_hosts).toString()
                     env.ingress_paths = (code_info."${micro_key}".ingress_paths).toString()
-                    env.no_ingress = (code_info."${micro_key}".no_ingress).toString()
+                    env.no_ingress = (code_info."${micro_key}".no_ingress) ?: (code_info.private.no_ingress)
                     env.node_ins = (code_info."${micro_key}".node_ins).toString()
                     env.maven_ins = (code_info."${micro_key}".maven_ins).toString()
                     env.websocket_port = (code_info."${micro_key}".websocket_port).toString()
@@ -158,12 +130,7 @@ spec:
                         fi
                     '''
                 }
-
-                sh "curl -s -X POST -H 'Content-Type: application/json' -d '{\"msg_type\":\"text\",\"content\":{\"text\":\"[${env.JOB_BASE_NAME}] prod构建/部署成功\"}}' ${env.lark_webhook_url} || true"
             } catch (e) {
-                sh "curl -s -X POST -H 'Content-Type: application/json' -d '{\"msg_type\":\"text\",\"content\":{\"text\":\"[${env.JOB_BASE_NAME}] prod构建/部署失败\"}}' ${env.lark_webhook_url} || true"
                 throw e
             }
-        }
-    }
 }

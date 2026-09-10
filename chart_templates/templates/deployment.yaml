@@ -32,7 +32,7 @@ spec:
         {{- if .Values.skywalking.enabled }}
         project-type: {{ .Values.project_type }}
         {{- end }}
-      {{- if .Values.skywalking_enabled }}
+      {{- if .Values.skywalking.enabled }}
       annotations:
         app-version: {{ .Values.version | quote }}
         co.elastic.logs/enabled: 'true'

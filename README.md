@@ -5,16 +5,16 @@
 环境只有4套：**test / dev / uat / prod**（已删除 `sit`）。
 
 只有 2 次真正的镜像构建（buildah）：
-- `test/`：共享构建job，checkout业务代码（GitHub）、buildah build、push镜像到ECR，不做helm部署。构建完在"Print image tag"步骤打印出镜像tag。
+- `test/`：checkout业务代码（GitHub）、buildah build、push镜像到ECR。
 - `prod/`：保留独立的 checkout+build+push+deploy，物理上是第2次build。
 
-`test/` 目录下同时还有一个**独立的部署job**（`test/deploy.Jenkinsfile`+`test/deploy_pipline.groovy`），跟上面的构建job完全分开、互不影响——test环境的镜像构建和helm部署是两个job。
+`test/` 目录下只有**一个job**（`test/astrox.Jenkinsfile`），构建和部署合并在一起——是否构建由 `DO_BUILD` 参数控制（勾选=先checkout业务代码+buildah build+push再部署，走`test/pipline.groovy`；不勾选=跳过构建直接部署，走`test/deploy_pipline.groovy`），跟`prod`一样是"build+deploy同job"模式，build不是单独的job，只是job里的一个开关。
 
-`test`（部署job）、`dev`、`uat` 三个环境的部署job都是纯部署：不再checkout业务代码/build/push，用一个 `SPECIFY_TAG` 布尔开关 + `IMAGE_TAG` 字符串参数——不勾选`SPECIFY_TAG`（默认）自动去ECR查该服务最新push的tag，勾选后填`IMAGE_TAG`用于回滚/部署指定历史版本，直接拿这个已经push好的镜像做 `更新values.yaml → helm upgrade`。
+`dev`、`uat` 两个环境是纯部署job：不checkout业务代码/build/push，用一个 `SPECIFY_TAG` 布尔开关 + `IMAGE_TAG` 字符串参数——不勾选`SPECIFY_TAG`（默认）自动去ECR查该服务最新push的tag，勾选后填`IMAGE_TAG`用于回滚/部署指定历史版本，直接拿这个已经push好的镜像做 `更新values.yaml → helm upgrade`。test不勾选`DO_BUILD`时走的也是这套`SPECIFY_TAG`/`IMAGE_TAG`逻辑。
 
 Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL)`），不再用固定的静态 `node(label)`；agent的K8s cloud名和镜像地址由各环境 `setting.groovy` 的 `private.jenkins_cloud`/`private.agent_image` 决定。
 
-每个job（build/deploy）结束后都会往飞书（Lark）webhook发一条成功/失败通知，webhook地址在各环境 `setting.groovy` 的 `private.lark_webhook_url`（当前是占位符，需要用户去飞书群机器人设置里核实真实地址）。
+飞书（Lark）成功/失败通知目前已去掉（`private.lark_webhook_url`字段及各Jenkinsfile里对应的`curl`通知步骤都已删除），等有真实webhook地址再加回来。
 
 ### `env_tier` 与 `namespaces` 的区别（重要）
 
@@ -31,11 +31,11 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
 
 ## 操作步骤
 
-### test（构建 + 部署，两个独立job，共用同一份 test/setting.groovy）
+### test（构建 + 部署，同一个job，`DO_BUILD`参数控制是否构建）
 ```
-1）修改 test/setting.groovy，新增子字典（jenkins项目名做key，如没有将退出）——构建字段和部署字段写在同一个字典里，因为test构建job和test部署job读的是同一份文件：
+1）修改 test/setting.groovy，新增子字典（jenkins项目名做key，如没有将退出）——构建字段和部署字段写在同一个字典里：
     "xxx-service": {
-        # 构建相关字段（test构建job用）
+        # 构建相关字段（DO_BUILD勾选时用）
         "github_url": "https://github.com/your-org/xxx-service.git", #项目代码（GitHub）
         "project": "xxx-service",        #gradle/maven模块名，同时也是helm templates里的{project}命名前缀
         "project_type": "java8",         #java8/newexchange_java8/java17_maven/nginx/go/nodejs/nodejs_explore/python
@@ -44,7 +44,7 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
         "node_ins": "...",               #如果project_type是nodejs系
         "nodejs_version": "16.14.1",
         "namespaces": "test-product",    #可选，缺省沿用 private.namespaces="test"
-        # 部署相关字段（test部署job用，字段含义跟dev/uat一致，见下面"test/dev/uat（部署）"）
+        # 部署相关字段（字段含义跟dev/uat一致，见下面"test/dev/uat（部署）"）
         "replicas": "1",
         "http_port": "8080",
         "actuator_port": "8080",
@@ -53,10 +53,9 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
         "no_ingress": "false",
         "websocket_port": "null",
     },
-2）跑 test 构建job，跑完会在"Print image tag"步骤打印出镜像tag（现在只作参考/回滚用，test/dev/uat对应部署job默认会自动去ECR取最新tag，不需要再手动复制）
-3）跑 test 部署job（`test/deploy.Jenkinsfile`），`SPECIFY_TAG`不勾选直接跑即可，自动去ECR取该服务最新一次push的tag
+2）Build with Parameters跑job：勾选`DO_BUILD`=先构建新镜像（走`test/pipline.groovy`）再部署；不勾选=跳过构建直接部署（`SPECIFY_TAG`不勾选直接跑即可，自动去ECR取该服务最新一次push的tag）
 ```
-构建工具是 buildah（不是 docker），构建前会先 `aws ecr get-login-password | buildah login` 显式登录ECR，ECR仓库不存在会自动 `aws ecr create-repository` 创建。test部署job用的是独立的部署agent镜像（`private.deploy_agent_image`，只需要helm/kubectl/awscli），跟构建job的`private.agent_image`（JDK17/Maven/buildah）分开，两个job互不影响。
+构建工具是 buildah（不是 docker），构建前会先 `aws ecr get-login-password | buildah login` 显式登录ECR，ECR仓库不存在会自动 `aws ecr create-repository` 创建。`DO_BUILD`勾选时用`private.agent_image`（JDK17/Maven/buildah规格），不勾选时用`private.deploy_agent_image`（helm/kubectl/awscli规格），同一个job按参数二选一。
 
 ### test / dev / uat（部署）
 ```
@@ -83,7 +82,7 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
     },
 2）跑对应job，**`SPECIFY_TAG`不勾选直接构建即可**（自动去ECR取该服务最新一次push的tag，不用再去test job手动复制）；要部署/回滚到某个历史tag，勾选`SPECIFY_TAG`并在`IMAGE_TAG`里填那个tag
 ```
-`dev`/`uat`部署job的`IMAGE_TAG`自动解析用的ECR仓库路径是test构建时**实际push的路径**（读`test/setting.groovy`里该服务的`namespaces`覆盖值，不是字面量`"test"`），所以自动取tag前提是`test/setting.groovy`和`dev|uat/setting.groovy`里同一个服务的配置都已经写好。test部署job则直接读自己那份`test/setting.groovy`里的`namespaces`，不需要跨文件。
+`dev`/`uat`部署job的`IMAGE_TAG`自动解析用的ECR仓库路径是test构建时**实际push的路径**（读`test/setting.groovy`里该服务的`namespaces`覆盖值，不是字面量`"test"`），所以自动取tag前提是`test/setting.groovy`和`dev|uat/setting.groovy`里同一个服务的配置都已经写好。test不勾选`DO_BUILD`时则直接读自己那份`test/setting.groovy`里的`namespaces`，不需要跨文件。
 
 > **uat跨AWS账号前提**：test/dev共用ECR账号 `178092210163`，uat是独立账号 `696000197734`。`uat/setting.groovy` 的 `docker_repository_url` 已经指向test/dev共用registry（而不是uat自己账号），这样uat才能部署test构建产出的同一个镜像tag——但这要求test/dev账号下那个ECR仓库的仓库策略（repository policy）显式允许uat账号跨账号pull，这是AWS侧需要用户自行配置的前提条件，不是代码能解决的。
 
@@ -91,8 +90,9 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
 ```
 沿用上面test的build字段 + dev/uat的部署字段，两份都要写在 prod/setting.groovy 同一个子字典里。
 ```
-prod的agent镜像（`private.agent_image`）需要同时具备构建工具链（JDK17/Maven/buildah）和部署工具链（helm/kubectl/awscli），因为prod是唯一一个build+deploy在同一个job里跑的环境。
+prod的agent镜像（`private.agent_image`）需要同时具备构建工具链（JDK17/Maven/buildah）和部署工具链（helm/kubectl/awscli），因为prod始终勾选构建，build+deploy在同一个job里跑（跟test不同的是prod没有`DO_BUILD`开关，永远构建）。
 
 > GitHub凭据：仓库里目前的凭据ID只是占位，部署前必须去 Jenkins 里核实/替换成 Astrox 自己配置的真实凭据（各 `pipline.groovy` 里标了 TODO）。
 > Jenkins地址切换到 `https://jenkins.astroxs.com/` 不涉及本仓库代码，需要在 Jenkins 侧自行配置。
-> 仍然待补充的真实值：`dev`/`prod` 两个环境真实ECR地址（`setting.groovy` 里的 `FILL_IN_*` 占位符）、飞书webhook真实地址、`prod` 的 `jenkins_cloud`/`agent_image` 真实值。
+> **KUBECONFIG**：`test`/`dev`/`uat`三个环境不再直接写死kubeconfig文件路径字符串，改成`private.kubeconfig_credential_id`——填一个Jenkins里"Secret file"类型凭据的ID，凭据内容是能访问目标EKS集群的kubeconfig文件本身，job里用`withCredentials([file(...)])`注入。当前是占位符`FILL_IN_KUBECONFIG_CREDENTIAL_ID`，需要用户先在Jenkins（Manage Jenkins → Credentials）创建这个凭据，再把真实ID填进三个`setting.groovy`。`prod/setting.groovy`维持原来`private.KUBECONFIG`直接写路径字符串的写法不变（未改动，沿用其原有的Jenkins托管路径机制）。
+> 仍然待补充的真实值：`dev`/`prod` 两个环境真实ECR地址（`setting.groovy` 里的 `FILL_IN_*` 占位符）、`prod` 的 `jenkins_cloud`/`agent_image` 真实值。

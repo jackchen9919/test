@@ -1,38 +1,9 @@
 import groovy.json.JsonSlurper
 //jenkins agent label
 //项目主函数astrox.Jenkinsfile：只做部署，不再checkout业务代码/build/push，镜像由 test 构建job统一产出
-//先用内置静态agent clone一次配置仓库，只为了读出该用哪个K8s cloud/哪个agent镜像
-node {
-    stage('Resolve deploy agent') {
-        withCredentials([gitUsernamePassword(credentialsId: '9bb9a583-a510-4e45-91cc-bd4a3b9c307d', gitToolName: 'Default')]) {
-            sh '''
-                rm -fr astrox-helm-chart devops
-                git clone https://github.com/jackchen9919/test.git astrox-helm-chart
-            '''
-        }
-        def file = readFile("astrox-helm-chart/uat/setting.groovy")
-        def jsonSlurper = new JsonSlurper()
-        def code_info = jsonSlurper.parseText(file)
-        env.jenkins_cloud = (code_info.private.jenkins_cloud).toString()
-        env.agent_image = (code_info.private.agent_image).toString()
-    }
-}
-
-podTemplate(cloud: "${jenkins_cloud}", yaml: """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: deploy
-    image: ${agent_image}
-    command: ['cat']
-    tty: true
-"""
-) {
-    node(POD_LABEL) {
-        container('deploy') {
+//jenkins-sg.hichain.me 没装Kubernetes插件/没配置任何Cloud，只有一个静态节点（标签ofc-hk-bastion），该节点已确认有helm/kubectl/aws-cli/envsubst，agent直接跑在这个静态节点上，不再用K8s动态pod agent
+node('ofc-hk-bastion') {
             try {
-                //此方案用来解决checkout scm helm拉取分支报错问题
                 stage('clone helm chart') {
                     withCredentials([gitUsernamePassword(credentialsId: '9bb9a583-a510-4e45-91cc-bd4a3b9c307d', gitToolName: 'Default')]) {
                         sh '''
@@ -62,9 +33,8 @@ spec:
                     env.chart_name = (code_info.private.chart_name).toString()
                     env.docker_repository_url = (code_info.private.docker_repository_url).toString()
                     env.nfs_server = (code_info.private.nfs_server).toString()
-                    env.KUBECONFIG = (code_info.private.KUBECONFIG).toString()
+                    env.kubeconfig_credential_id = (code_info.private.kubeconfig_credential_id).toString()
                     env.log_nfs_server = (code_info.private.log_nfs_server).toString()
-                    env.lark_webhook_url = (code_info.private.lark_webhook_url).toString()
 
                     //项目参数
                     env.app_name = (code_info."${micro_key}".app_name).toString()
@@ -82,7 +52,7 @@ spec:
                     env.http_port = (code_info."${micro_key}".http_port).toString()
                     env.ingress_hosts = (code_info."${micro_key}".ingress_hosts).toString()
                     env.ingress_paths = (code_info."${micro_key}".ingress_paths).toString()
-                    env.no_ingress = (code_info."${micro_key}".no_ingress).toString()
+                    env.no_ingress = (code_info."${micro_key}".no_ingress) ?: (code_info.private.no_ingress)
                     env.websocket_port = (code_info."${micro_key}".websocket_port).toString()
 
                     //skywalking_enabled跟project_type在deployment有一定关联
@@ -121,34 +91,34 @@ spec:
                     '''
                 }
 
-                // kubeconfig 配置文件是jenkins托管的，在全局凭据里面修改
+                // kubeconfig 文件不是agent镜像里现成的，走Jenkins "Secret file" 凭据注入：
+                // withCredentials把凭据内容落到一个临时文件，赋给KUBECONFIG环境变量——helm/kubectl都会自动读这个环境变量，不用再显式传--kubeconfig
                 stage('ofc helm upgrade') {
-                    sh '''
-                        helm list -n ${namespaces}|grep ${app_name} &> /dev/null
-                        helm upgrade ${app_name} --install -n ${namespaces} ./${chart_name}/${env_tier}
-                    '''
+                    withCredentials([file(credentialsId: env.kubeconfig_credential_id, variable: 'KUBECONFIG')]) {
+                        sh '''
+                            helm list -n ${namespaces}|grep ${app_name} &> /dev/null
+                            helm upgrade ${app_name} --install -n ${namespaces} ./${chart_name}/${env_tier}
+                        '''
+                    }
                 }
 
 
                 stage('update helm chart') {
-                    sh '''
-                        timeout 300 kubectl --kubeconfig ${KUBECONFIG} rollout status ${kind_name} -n ${namespaces} ${app_name} || status=false
-                        if [ "$status" = "false" ];then
-                            echo "`date +%F-%M:%S` 发布失败,打印失败容器日志."
-                            timeout 120 kubetail -n ${namespaces} -l appname=${app_name}
-                            echo "`date +%F-%M:%S` 执行回滚操作."
-                            kubectl --kubeconfig ${KUBECONFIG} rollout -n ${namespaces} undo deployment ${app_name}
-                        else
-                            echo "`date +%F-%M:%S` 发布成功"
-                        fi
-                    '''
+                    withCredentials([file(credentialsId: env.kubeconfig_credential_id, variable: 'KUBECONFIG')]) {
+                        sh '''
+                            timeout 300 kubectl rollout status ${kind_name} -n ${namespaces} ${app_name} || status=false
+                            if [ "$status" = "false" ];then
+                                echo "`date +%F-%M:%S` 发布失败,打印失败容器日志."
+                                timeout 120 kubetail -n ${namespaces} -l appname=${app_name}
+                                echo "`date +%F-%M:%S` 执行回滚操作."
+                                kubectl rollout -n ${namespaces} undo deployment ${app_name}
+                            else
+                                echo "`date +%F-%M:%S` 发布成功"
+                            fi
+                        '''
+                    }
                 }
-
-                sh "curl -s -X POST -H 'Content-Type: application/json' -d '{\"msg_type\":\"text\",\"content\":{\"text\":\"[${env.JOB_BASE_NAME}] uat部署成功 tag=${env.image_tag}\"}}' ${env.lark_webhook_url} || true"
             } catch (e) {
-                sh "curl -s -X POST -H 'Content-Type: application/json' -d '{\"msg_type\":\"text\",\"content\":{\"text\":\"[${env.JOB_BASE_NAME}] uat部署失败\"}}' ${env.lark_webhook_url} || true"
                 throw e
             }
-        }
-    }
 }
