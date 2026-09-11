@@ -88,8 +88,11 @@ node('ofc-hk-bastion') {
                 //load()加载的声明式sub-pipeline跑在独立node()/workspace里，里面设的env.image_tag(/commit_id)不会可靠带回这一层scripted pipeline
                 //（Jenkins load()跨作用域的已知限制，实测有时能带回有时不能），统一从sub-pipeline落的临时文件读回来，同一台静态节点上文件系统是共享的
                 stage('Read build outputs') {
+                    //临时诊断：确认/tmp文件是否存在、内容是什么、readFile后env.image_tag实际值
                     def image_tag_file = "/tmp/${env.JOB_NAME.replaceAll('/', '_')}-${env.BUILD_NUMBER}-image_tag.txt"
+                    sh "echo 'host: '\$(hostname); ls -la ${image_tag_file} || echo 'FILE NOT FOUND'; cat ${image_tag_file} || true"
                     env.image_tag = readFile(image_tag_file).trim()
+                    echo "DEBUG image_tag after readFile = [${env.image_tag}]"
                     sh "rm -f ${image_tag_file}"
                     if (params.DO_BUILD) {
                         def commit_id_file = "/tmp/${env.JOB_NAME.replaceAll('/', '_')}-${env.BUILD_NUMBER}-commit_id.txt"
