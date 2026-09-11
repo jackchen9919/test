@@ -86,13 +86,10 @@ node('ofc-hk-bastion') {
                 }
 
                 //load()加载的声明式sub-pipeline跑在独立node()/workspace里，里面设的env.image_tag(/commit_id)不会可靠带回这一层scripted pipeline
-                //（Jenkins load()跨作用域的已知限制，实测有时能带回有时不能），统一从sub-pipeline落的临时文件读回来，同一台静态节点上文件系统是共享的
+                //（Jenkins load()跨作用域的已知限制），统一从sub-pipeline落的临时文件读回来，同一台静态节点上文件系统是共享的
                 stage('Read build outputs') {
-                    //临时诊断：确认/tmp文件是否存在、内容是什么、readFile后env.image_tag实际值
                     def image_tag_file = "/tmp/${env.JOB_NAME.replaceAll('/', '_')}-${env.BUILD_NUMBER}-image_tag.txt"
-                    sh "echo 'host: '\$(hostname); ls -la ${image_tag_file} || echo 'FILE NOT FOUND'; cat ${image_tag_file} || true"
                     env.image_tag = readFile(image_tag_file).trim()
-                    echo "DEBUG image_tag after readFile = [${env.image_tag}]"
                     sh "rm -f ${image_tag_file}"
                     if (params.DO_BUILD) {
                         def commit_id_file = "/tmp/${env.JOB_NAME.replaceAll('/', '_')}-${env.BUILD_NUMBER}-commit_id.txt"
@@ -103,23 +100,25 @@ node('ofc-hk-bastion') {
 
                 // value.yaml deliver deployment full
                 stage('Update values.yaml') {
-                    sh '''
-                        echo "DEBUG shell sees image_tag=[$image_tag] commit_id=[$commit_id]"
-                        rm -rf ${chart_name}/${env_tier}/templates
-                        mkdir -p ${chart_name}/${env_tier}/templates
-                        cp ${chart_name}/chart_templates/template.Chart.yaml ${chart_name}/${env_tier}/
-                        cp ${chart_name}/chart_templates/template_*.values.yaml ${chart_name}/${env_tier}/
-                        cp ${chart_name}/chart_templates/templates/* ${chart_name}/${env_tier}/templates/
-                        cd ${chart_name}/${env_tier}
-                        envsubst < template_${project_type}.values.yaml > values.yaml
-                        cat -A values.yaml | sed -n '6,8p'
-                        if [ "${websocket_port}" = 'null' ];then sed -i '/websocket/{N;N;d;}' values.yaml;fi
-                        envsubst < template.Chart.yaml > Chart.yaml && rm -fr template_*
-                        cd templates
-                        sed -i 's/{project}/${project}/g' _helpers.tpl
-                        sed -i 's/{project}/${project}/g' hpa.yaml
-                        if [ ${no_ingress} = 'true' ];then rm -fr apisixroute.yaml;fi
-                    '''
+                    //实测env.image_tag/env.commit_id在这里赋值后，即使就在同一层scripted pipeline里，也不会可靠导出成Update values.yaml这个sh步骤的进程环境变量
+                    //（跟load()无关的另一个env导出时机问题），改成withEnv在真正要用到的地方显式注入，绕开这个不确定性
+                    withEnv(["image_tag=${env.image_tag}", "commit_id=${env.commit_id ?: ''}"]) {
+                        sh '''
+                            rm -rf ${chart_name}/${env_tier}/templates
+                            mkdir -p ${chart_name}/${env_tier}/templates
+                            cp ${chart_name}/chart_templates/template.Chart.yaml ${chart_name}/${env_tier}/
+                            cp ${chart_name}/chart_templates/template_*.values.yaml ${chart_name}/${env_tier}/
+                            cp ${chart_name}/chart_templates/templates/* ${chart_name}/${env_tier}/templates/
+                            cd ${chart_name}/${env_tier}
+                            envsubst < template_${project_type}.values.yaml > values.yaml
+                            if [ "${websocket_port}" = 'null' ];then sed -i '/websocket/{N;N;d;}' values.yaml;fi
+                            envsubst < template.Chart.yaml > Chart.yaml && rm -fr template_*
+                            cd templates
+                            sed -i 's/{project}/${project}/g' _helpers.tpl
+                            sed -i 's/{project}/${project}/g' hpa.yaml
+                            if [ ${no_ingress} = 'true' ];then rm -fr apisixroute.yaml;fi
+                        '''
+                    }
                 }
 
                 // kubeconfig 文件不是agent镜像里现成的，走Jenkins "Secret file" 凭据注入：
