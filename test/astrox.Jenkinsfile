@@ -100,9 +100,10 @@ node('ofc-hk-bastion') {
 
                 // value.yaml deliver deployment full
                 stage('Update values.yaml') {
-                    //实测env.image_tag/env.commit_id在这里赋值后，即使就在同一层scripted pipeline里，也不会可靠导出成Update values.yaml这个sh步骤的进程环境变量
-                    //（跟load()无关的另一个env导出时机问题），改成withEnv在真正要用到的地方显式注入，绕开这个不确定性
+                    //临时诊断：确认withEnv构造时/进shell后各自看到的image_tag值
+                    echo "DEBUG pre-withEnv image_tag=[${env.image_tag}]"
                     withEnv(["image_tag=${env.image_tag}", "commit_id=${env.commit_id ?: ''}"]) {
+                        sh 'echo "DEBUG in-withEnv shell image_tag=[$image_tag]"'
                         sh '''
                             rm -rf ${chart_name}/${env_tier}/templates
                             mkdir -p ${chart_name}/${env_tier}/templates
