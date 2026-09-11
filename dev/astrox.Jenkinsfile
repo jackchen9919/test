@@ -20,7 +20,7 @@ properties([
         [$class: 'GitParameterDefinition',
          name: 'BRANCH_TAG',
          type: 'PT_BRANCH',
-         description: 'dev是第一梯队构建环境，默认选main=用这个分支checkout+build+push新镜像再部署；留空=跳过构建，直接部署test已构建好的镜像(用下面IMAGE_TAG，或自动取ECR最新tag)。下拉列表是实时拉取的真实分支，支持打字过滤；如果通过API等方式绕过下拉框传入了不存在的分支名，会在下面"Validate branch"阶段直接报错终止，不会跑到一半才失败',
+         description: 'dev是第一梯队构建环境，默认选main=用这个分支checkout+build+push新镜像再部署；留空=跳过构建，直接部署test已构建好的镜像(用下面IMAGE_TAG，或部署:latest标签)。下拉列表是实时拉取的真实分支，支持打字过滤；如果通过API等方式绕过下拉框传入了不存在的分支名，会在下面"Validate branch"阶段直接报错终止，不会跑到一半才失败',
          branchFilter: 'origin/(.*)',
          tagFilter: '*',
          sortMode: 'DESCENDING_SMART',
@@ -30,7 +30,7 @@ properties([
          quickFilterEnabled: true,
          listSize: '5',
          requiredParameter: false],
-        string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在BRANCH_TAG留空时生效。留空=自动取ECR里该服务最新一次push的tag（推荐，日常部署不用管这个）；填了=部署这个指定的历史tag（用于回滚）')
+        string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在BRANCH_TAG留空时生效。留空=部署:latest标签（推荐，日常部署不用管这个；每次构建job都会额外维护这个tag）；填了=部署这个指定的历史tag（用于回滚）')
     ])
 ])
 node('ofc-hk-bastion') {
@@ -120,7 +120,7 @@ node('ofc-hk-bastion') {
                     }
                 }
 
-                //BRANCH_TAG是"开关"：填了分支名=真的checkout+build+push（dev/pipline_build.groovy），留空=跳过构建直接部署test已构建的镜像（dev/pipline.groovy，IMAGE_TAG或自动取ECR最新tag）
+                //BRANCH_TAG是"开关"：填了分支名=真的checkout+build+push（dev/pipline_build.groovy），留空=跳过构建直接部署test已构建的镜像（dev/pipline.groovy，IMAGE_TAG或:latest标签）
                 if (params.BRANCH_TAG?.trim()) {
                     load("astrox-helm-chart/dev/pipline_build.groovy")
                 } else {

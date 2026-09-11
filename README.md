@@ -53,7 +53,7 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
         "no_ingress": "false",
         "websocket_port": "null",
     },
-2）Build with Parameters跑job：`BRANCH_TAG`下拉选一个分支（如`main`，可打字过滤）=先构建新镜像（走`test/pipline.groovy`）再部署；留空=跳过构建直接部署（`IMAGE_TAG`留空直接跑即可，自动去ECR取该服务最新一次push的tag）
+2）Build with Parameters跑job：`BRANCH_TAG`下拉选一个分支（如`main`，可打字过滤）=先构建新镜像（走`test/pipline.groovy`）再部署；留空=跳过构建直接部署（`IMAGE_TAG`留空直接跑即可，部署`:latest`标签——每次构建job都会额外维护这个tag，不再靠ECR按push时间排序猜最新）
 ```
 构建工具是 buildah（不是 docker），构建前会先 `aws ecr get-login-password | buildah login` 显式登录ECR，ECR仓库不存在会自动 `aws ecr create-repository` 创建。`BRANCH_TAG`填了分支名时用`private.agent_image`（JDK17/Maven/buildah规格），留空时用`private.deploy_agent_image`（helm/kubectl/awscli规格），同一个job按参数二选一。
 
@@ -80,9 +80,9 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
         "min_replicas": "1",              #可选，HPA最小副本数，缺省沿用 private.min_replicas
         "max_replicas": "10",             #可选，HPA最大副本数，缺省沿用 private.max_replicas
     },
-2）跑对应job，**`IMAGE_TAG`留空直接构建即可**（自动去ECR取该服务最新一次push的tag，不用再去test job手动复制）；要部署/回滚到某个历史tag，在`IMAGE_TAG`里填那个tag
+2）跑对应job，**`IMAGE_TAG`留空直接构建即可**（部署`:latest`标签，不用再去test job手动复制）；要部署/回滚到某个历史tag，在`IMAGE_TAG`里填那个tag
 ```
-`dev`/`uat`部署job的`IMAGE_TAG`自动解析用的ECR仓库路径是test构建时**实际push的路径**（读`test/setting.groovy`里该服务的`namespaces`覆盖值，不是字面量`"test"`），所以自动取tag前提是`test/setting.groovy`和`dev|uat/setting.groovy`里同一个服务的配置都已经写好。test的`BRANCH_TAG`留空时则直接读自己那份`test/setting.groovy`里的`namespaces`，不需要跨文件。
+`dev`/`uat`部署job的`IMAGE_TAG`留空时解析用的ECR仓库路径是test构建时**实际push的路径**（读`test/setting.groovy`里该服务的`namespaces`覆盖值，不是字面量`"test"`），所以`:latest`标签的前提是`test/setting.groovy`和`dev|uat/setting.groovy`里同一个服务的配置都已经写好、且test至少成功构建过一次。test的`BRANCH_TAG`留空时则直接读自己那份`test/setting.groovy`里的`namespaces`，不需要跨文件。
 
 > **uat跨AWS账号前提**：test/dev共用ECR账号 `178092210163`，uat是独立账号 `696000197734`。`uat/setting.groovy` 的 `docker_repository_url` 已经指向test/dev共用registry（而不是uat自己账号），这样uat才能部署test构建产出的同一个镜像tag——但这要求test/dev账号下那个ECR仓库的仓库策略（repository policy）显式允许uat账号跨账号pull，这是AWS侧需要用户自行配置的前提条件，不是代码能解决的。
 

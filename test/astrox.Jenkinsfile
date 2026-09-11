@@ -2,7 +2,7 @@
 //checkpoint时报NotSerializableException；后者的构造函数未在这个Jenkins实例的脚本沙箱白名单里，报RejectedAccessException。
 //改用pipeline-utility-steps插件自带的readJSON——这是正经Jenkins step而非裸Groovy对象，天然沙箱安全、返回值天然可序列化。
 //test环境：构建+部署合并成同一个job（原来是test/astrox.Jenkinsfile构建job + test/deploy.Jenkinsfile部署job两个独立job，现在合并）
-//是否走真实的checkout+build+push由BRANCH_TAG参数是否为空控制：填分支名=先构建新镜像再部署（走test/pipline.groovy）；留空=跳过构建直接部署，用IMAGE_TAG或自动取ECR最新tag（走test/deploy_pipline.groovy）
+//是否走真实的checkout+build+push由BRANCH_TAG参数是否为空控制：填分支名=先构建新镜像再部署（走test/pipline.groovy）；留空=跳过构建直接部署，用IMAGE_TAG或:latest标签（走test/deploy_pipline.groovy）
 //结构照抄prod/astrox.Jenkinsfile的"构建+部署在同一个job"模式
 //BRANCH_TAG/IMAGE_TAG以前分别声明在test/pipline.groovy、test/deploy_pipline.groovy里（load()加载的子pipeline），
 //declarative的parameters{}块在load()子pipeline里不会注册成真正的job级参数（UI选不到）——统一收到这里的properties()才是唯一生效的参数声明，
@@ -19,7 +19,7 @@ properties([
         [$class: 'GitParameterDefinition',
          name: 'BRANCH_TAG',
          type: 'PT_BRANCH',
-         description: '留空=不构建，直接部署（用IMAGE_TAG，或自动取ECR最新tag）；选分支=用这个分支checkout业务代码+build+push新镜像再部署。下拉列表是实时拉取的真实分支，支持打字过滤；如果通过API等方式绕过下拉框传入了不存在的分支名，会在下面"Validate branch"阶段直接报错终止，不会跑到一半才失败',
+         description: '留空=不构建，直接部署（用IMAGE_TAG，或部署:latest标签）；选分支=用这个分支checkout业务代码+build+push新镜像再部署。下拉列表是实时拉取的真实分支，支持打字过滤；如果通过API等方式绕过下拉框传入了不存在的分支名，会在下面"Validate branch"阶段直接报错终止，不会跑到一半才失败',
          branchFilter: 'origin/(.*)',
          tagFilter: '*',
          sortMode: 'DESCENDING_SMART',
@@ -29,7 +29,7 @@ properties([
          quickFilterEnabled: true,
          listSize: '5',
          requiredParameter: false],
-        string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在BRANCH_TAG留空时生效。留空=自动取ECR里该服务最新一次push的tag（推荐，日常部署不用管这个）；填了=部署这个指定的历史tag（用于回滚）')
+        string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在BRANCH_TAG留空时生效。留空=部署:latest标签（推荐，日常部署不用管这个；每次构建job都会额外维护这个tag）；填了=部署这个指定的历史tag（用于回滚）')
     ])
 ])
 
@@ -116,7 +116,7 @@ node('ofc-hk-bastion') {
                     }
                 }
 
-                //BRANCH_TAG是"开关"：填了分支名=真的checkout+build+push（test/pipline.groovy），留空=跳过构建直接部署（test/deploy_pipline.groovy，IMAGE_TAG或自动取ECR最新tag）
+                //BRANCH_TAG是"开关"：填了分支名=真的checkout+build+push（test/pipline.groovy），留空=跳过构建直接部署（test/deploy_pipline.groovy，IMAGE_TAG或:latest标签）
                 if (params.BRANCH_TAG?.trim()) {
                     load("astrox-helm-chart/test/pipline.groovy")
                 } else {
