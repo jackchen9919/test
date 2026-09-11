@@ -1,9 +1,6 @@
 pipeline {
     agent any
-    parameters {
-        booleanParam(name: 'SPECIFY_TAG', defaultValue: false, description: '是否手动指定要部署的镜像tag。默认不勾选=自动取ECR里该服务最新一次push的tag（推荐，日常部署不用管这个）；勾选=手动填下面的IMAGE_TAG，用于回滚/部署指定历史版本')
-        string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在勾选SPECIFY_TAG时生效，填要部署的历史tag')
-    }
+    //SPECIFY_TAG/IMAGE_TAG参数已挪到外层uat/astrox.Jenkinsfile的properties()统一声明（这里原来的parameters{}块在load()子pipeline里不会注册成真正job参数）
     stages {
         stage('Resolve image tag') {
             steps {

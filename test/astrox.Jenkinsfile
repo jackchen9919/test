@@ -2,9 +2,25 @@ import groovy.json.JsonSlurper
 //test环境：构建+部署合并成同一个job（原来是test/astrox.Jenkinsfile构建job + test/deploy.Jenkinsfile部署job两个独立job，现在合并）
 //是否走真实的checkout+build+push由DO_BUILD参数控制：勾选=先构建新镜像再部署（走test/pipline.groovy）；不勾选=跳过构建直接部署，用SPECIFY_TAG/IMAGE_TAG或自动取ECR最新tag（走test/deploy_pipline.groovy）
 //结构照抄prod/astrox.Jenkinsfile的"构建+部署在同一个job"模式
+//BRANCH_TAG/SPECIFY_TAG/IMAGE_TAG以前分别声明在test/pipline.groovy、test/deploy_pipline.groovy里（load()加载的子pipeline），
+//declarative的parameters{}块在load()子pipeline里不会注册成真正的job级参数（UI选不到，一直显示不出分支下拉框）——统一收到这里的properties()才是唯一生效的参数声明，
+//子文件里原来的parameters{}块已删除，避免两边各自调properties()互相覆盖、参数忽隐忽现
 properties([
     parameters([
-        booleanParam(name: 'DO_BUILD', defaultValue: true, description: '是否先构建新镜像。勾选=checkout业务代码并build+push新镜像再部署；不勾选=跳过构建直接部署（用SPECIFY_TAG/IMAGE_TAG，或自动取ECR最新tag）——等价于以前独立的test部署job')
+        booleanParam(name: 'DO_BUILD', defaultValue: false, description: '是否先构建新镜像。勾选=用下面选的分支checkout业务代码并build+push新镜像再部署；不勾选=跳过构建直接部署（用SPECIFY_TAG/IMAGE_TAG，或自动取ECR最新tag）——等价于以前独立的test部署job'),
+        gitParameter(name: 'BRANCH_TAG',
+                     type: 'PT_BRANCH_TAG',
+                     branchFilter: 'origin/(.*)',
+                     defaultValue: 'main',
+                     selectedValue: 'DEFAULT',
+                     sortMode: 'DESCENDING_SMART',
+                     quickFilterEnabled: 'True',
+                     description: '仅在勾选DO_BUILD时生效，选要构建的分支',
+                     //github_url要到"Check info"阶段checkout后从setting.groovy读才有，但gitParameter渲染下拉框发生在checkout之前，只能先固定写死；
+                     //目前3个环境的业务仓库都是同一个repo，以后如果换repo，这里要跟着手动改，不会随setting.groovy自动联动
+                     useRepository: 'https://github.com/jackchen9919/test.git'),
+        booleanParam(name: 'SPECIFY_TAG', defaultValue: false, description: '仅在不勾选DO_BUILD时生效。是否手动指定要部署的镜像tag。默认不勾选=自动取ECR里该服务最新一次push的tag（推荐，日常部署不用管这个）；勾选=手动填下面的IMAGE_TAG，用于回滚/部署指定历史版本'),
+        string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在不勾选DO_BUILD且勾选SPECIFY_TAG时生效，填要部署的历史tag')
     ])
 ])
 

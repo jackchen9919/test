@@ -6,17 +6,7 @@ pipeline {
         nodejs "NodeJS 16.14.1"
         nodejs "NodeJS 14.17.1"
     }
-    parameters {
-        gitParameter name: 'BRANCH_TAG',
-                     type: 'PT_BRANCH_TAG',
-                     branchFilter: 'origin/(.*)',
-                     defaultValue: 'dev',
-                     selectedValue: 'DEFAULT',
-                     sortMode: 'DESCENDING_SMART',
-                     quickFilterEnabled: 'True',
-                     description: '',
-                     useRepository: "${github_url}"
-    }
+    //BRANCH_TAG参数已挪到外层dev/astrox.Jenkinsfile的properties()统一声明（这里原来的parameters{}块在load()子pipeline里不会注册成真正job参数）
 
     stages {
         stage('Check helm project code') {   //Solving the Problem of No Version Branch Packaging in the New Jenkinsfile
