@@ -104,6 +104,7 @@ node('ofc-hk-bastion') {
                 // value.yaml deliver deployment full
                 stage('Update values.yaml') {
                     sh '''
+                        echo "DEBUG shell sees image_tag=[$image_tag] commit_id=[$commit_id]"
                         rm -rf ${chart_name}/${env_tier}/templates
                         mkdir -p ${chart_name}/${env_tier}/templates
                         cp ${chart_name}/chart_templates/template.Chart.yaml ${chart_name}/${env_tier}/
@@ -111,6 +112,7 @@ node('ofc-hk-bastion') {
                         cp ${chart_name}/chart_templates/templates/* ${chart_name}/${env_tier}/templates/
                         cd ${chart_name}/${env_tier}
                         envsubst < template_${project_type}.values.yaml > values.yaml
+                        cat -A values.yaml | sed -n '6,8p'
                         if [ "${websocket_port}" = 'null' ];then sed -i '/websocket/{N;N;d;}' values.yaml;fi
                         envsubst < template.Chart.yaml > Chart.yaml && rm -fr template_*
                         cd templates
