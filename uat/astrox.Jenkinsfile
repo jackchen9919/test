@@ -1,4 +1,10 @@
 import groovy.json.JsonSlurper
+//JsonSlurper实例不能作为CPS局部变量跨step存活（Jenkins会在load()等step前checkpoint整个脚本状态，
+//遇到不可序列化的JsonSlurper对象会报NotSerializableException，uat这里两次parseText复用同一个实例更容易触发）——统一收到@NonCPS方法里执行，只把解析结果（可序列化的Map）传回CPS作用域
+@NonCPS
+def parseJsonText(String text) {
+    return new JsonSlurper().parseText(text)
+}
 //jenkins agent label
 //项目主函数astrox.Jenkinsfile：默认只做部署（镜像由test构建job统一产出）；DO_BUILD勾选时也支持脱离test、自行指定分支checkout+build+push再部署
 //jenkins-sg.hichain.me 没装Kubernetes插件/没配置任何Cloud，只有一个静态节点（标签ofc-hk-bastion），该节点已确认有helm/kubectl/aws-cli/envsubst，agent直接跑在这个静态节点上，不再用K8s动态pod agent
@@ -38,8 +44,7 @@ node('ofc-hk-bastion') {
                     def micro_key = env.JOB_BASE_NAME.replaceFirst(/^uat-java-/, '')
                     //读取配置文件（部署相关字段，build相关字段在 test/setting.groovy）
                     def file = readFile("astrox-helm-chart/uat/setting.groovy")
-                    def jsonSlurper = new JsonSlurper()
-                    def code_info = jsonSlurper.parseText(file)
+                    def code_info = parseJsonText(file)
 
                     def key = code_info.get(micro_key)
 
@@ -66,7 +71,7 @@ node('ofc-hk-bastion') {
                     //镜像统一从 test 构建job产出的共享仓库路径拉取，跟本环境自己的k8s namespace解耦
                     //ECR路径段必须跟test构建时实际push的路径一致——不能假定字面量"test"，因为test/setting.groovy里这个服务的namespaces可能被覆盖成"test-product"这种业务线路径
                     //跨AWS账号提醒：本环境docker_repository_url已固定指向test/dev共用registry，需确认该ECR仓库策略已允许本账号跨账号pull（含ecr:DescribeImages，用于下面自动取最新tag）
-                    def test_setting = jsonSlurper.parseText(readFile("astrox-helm-chart/test/setting.groovy"))
+                    def test_setting = parseJsonText(readFile("astrox-helm-chart/test/setting.groovy"))
                     env.test_namespaces = (test_setting."${micro_key}".namespaces) ?: (test_setting.private.namespaces)
                     //build相关参数（DO_BUILD勾选时才会用到），跟test共用一份配置，不在uat/setting.groovy里重复维护
                     env.github_url = (test_setting."${micro_key}".github_url).toString()
