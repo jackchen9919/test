@@ -1,9 +1,10 @@
-import groovy.json.JsonSlurper
+import groovy.json.JsonSlurperClassic
 //JsonSlurper实例不能作为CPS局部变量跨step存活（Jenkins会在load()等step前checkpoint整个脚本状态，
-//遇到不可序列化的JsonSlurper对象会报NotSerializableException）——统一收到@NonCPS方法里执行，只把解析结果（可序列化的Map）传回CPS作用域
+//遇到不可序列化的JsonSlurper对象会报NotSerializableException）——统一收到@NonCPS方法里执行，只把解析结果传回CPS作用域；
+//默认JsonSlurper()返回的LazyMap本身也不可序列化（实测踩过），改用JsonSlurperClassic()返回普通LinkedHashMap/ArrayList，可序列化
 @NonCPS
 def parseJsonText(String text) {
-    return new JsonSlurper().parseText(text)
+    return new JsonSlurperClassic().parseText(text)
 }
 //test环境：构建+部署合并成同一个job（原来是test/astrox.Jenkinsfile构建job + test/deploy.Jenkinsfile部署job两个独立job，现在合并）
 //是否走真实的checkout+build+push由DO_BUILD参数控制：勾选=先构建新镜像再部署（走test/pipline.groovy）；不勾选=跳过构建直接部署，用SPECIFY_TAG/IMAGE_TAG或自动取ECR最新tag（走test/deploy_pipline.groovy）
