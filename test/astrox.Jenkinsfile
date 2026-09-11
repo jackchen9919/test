@@ -169,6 +169,10 @@ node('ofc-hk-bastion') {
                         sh '''
                             helm list -n ${namespaces}|grep ${app_name} &> /dev/null
                             helm upgrade ${app_name} --install -n ${namespaces} ./${chart_name}/${env_tier}
+                            if [ "${image_tag}" = "latest" ]; then
+                                echo "IMAGE_TAG用的是浮动的:latest标签，Deployment里镜像字符串没变，helm upgrade不会自动触发滚动更新——手动rollout restart强制重新拉取"
+                                kubectl rollout restart ${kind_name} -n ${namespaces} ${app_name}
+                            fi
                         '''
                     }
                 }
