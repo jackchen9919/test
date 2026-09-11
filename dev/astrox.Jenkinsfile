@@ -4,12 +4,12 @@
 //jenkins agent label
 //项目主函数astrox.Jenkinsfile：默认只做部署（镜像由test构建job统一产出）；DO_BUILD勾选时也支持脱离test、自行指定分支checkout+build+push再部署
 //jenkins-sg.hichain.me 没装Kubernetes插件/没配置任何Cloud，只有一个静态节点（标签ofc-hk-bastion），该节点已确认有helm/kubectl/aws-cli/envsubst，agent直接跑在这个静态节点上，不再用K8s动态pod agent
-//BRANCH_TAG/SPECIFY_TAG/IMAGE_TAG以前分别声明在dev/pipline_build.groovy、dev/pipline.groovy里（load()加载的子pipeline），
+//BRANCH_TAG/IMAGE_TAG以前分别声明在dev/pipline_build.groovy、dev/pipline.groovy里（load()加载的子pipeline），
 //declarative的parameters{}块在load()子pipeline里不会注册成真正的job级参数（UI选不到，一直显示不出分支下拉框）——统一收到这里的properties()才是唯一生效的参数声明，
 //子文件里原来的parameters{}块已删除，避免两边各自调properties()互相覆盖、参数忽隐忽现
 properties([
     parameters([
-        booleanParam(name: 'DO_BUILD', defaultValue: true, description: 'dev是第一梯队构建环境，默认勾选=用下面选的分支checkout+build+push新镜像再部署；不勾选=跳过构建，直接部署test已构建好的镜像(用下面SPECIFY_TAG/IMAGE_TAG，或自动取ECR最新tag)'),
+        booleanParam(name: 'DO_BUILD', defaultValue: true, description: 'dev是第一梯队构建环境，默认勾选=用下面选的分支checkout+build+push新镜像再部署；不勾选=跳过构建，直接部署test已构建好的镜像(用下面IMAGE_TAG，或自动取ECR最新tag)'),
         gitParameter(name: 'BRANCH_TAG',
                      type: 'PT_BRANCH_TAG',
                      branchFilter: 'origin/(.*)',
@@ -21,8 +21,7 @@ properties([
                      //github_url要到"Check info"阶段checkout后从setting.groovy读才有，但gitParameter渲染下拉框发生在checkout之前，只能先固定写死；
                      //目前3个环境的业务仓库都是同一个repo，以后如果换repo，这里要跟着手动改，不会随setting.groovy自动联动
                      useRepository: 'https://github.com/jackchen9919/test.git'),
-        booleanParam(name: 'SPECIFY_TAG', defaultValue: false, description: '仅在不勾选DO_BUILD时生效。是否手动指定要部署的镜像tag。默认不勾选=自动取ECR里该服务最新一次push的tag（推荐，日常部署不用管这个）；勾选=手动填下面的IMAGE_TAG，用于回滚/部署指定历史版本'),
-        string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在不勾选DO_BUILD且勾选SPECIFY_TAG时生效，填要部署的历史tag')
+        string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在不勾选DO_BUILD时生效。留空=自动取ECR里该服务最新一次push的tag（推荐，日常部署不用管这个）；填了=部署这个指定的历史tag（用于回滚）')
     ])
 ])
 node('ofc-hk-bastion') {
@@ -97,7 +96,7 @@ node('ofc-hk-bastion') {
                     env.max_replicas = (code_info."${micro_key}".max_replicas) ?: (code_info.private.max_replicas)
                 }
 
-                //DO_BUILD是"按钮"：勾选=真的checkout+build+push（dev/pipline_build.groovy），不勾选=跳过构建直接部署test已构建的镜像（dev/pipline.groovy，SPECIFY_TAG/IMAGE_TAG或自动取ECR最新tag）
+                //DO_BUILD是"按钮"：勾选=真的checkout+build+push（dev/pipline_build.groovy），不勾选=跳过构建直接部署test已构建的镜像（dev/pipline.groovy，IMAGE_TAG或自动取ECR最新tag）
                 if (params.DO_BUILD) {
                     load("astrox-helm-chart/dev/pipline_build.groovy")
                 } else {

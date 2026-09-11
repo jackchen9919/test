@@ -7,7 +7,7 @@ test目录下只有**一个job**（`test/astrox.Jenkinsfile`），构建和部�
 用 `DO_BUILD` 参数（Build with Parameters里的一个勾选框）决定这一次跑不跑构建，构建不是单独的job/按钮，只是这个job里的一个开关：
 
 - **勾选 `DO_BUILD`**：checkout GitHub业务代码、build、push镜像（走 `test/pipline.groovy`），再接着做helm部署。日常提交新代码走这个。
-- **不勾选 `DO_BUILD`**：跳过构建，直接部署（走 `test/deploy_pipline.groovy`）。默认（`SPECIFY_TAG`不勾选）会自动去ECR取该服务最新一次push的tag部署；只有要回滚/部署指定历史版本时，才勾选`SPECIFY_TAG`并填`IMAGE_TAG`。
+- **不勾选 `DO_BUILD`**：跳过构建，直接部署（走 `test/deploy_pipline.groovy`）。默认（`IMAGE_TAG`留空）会自动去ECR取该服务最新一次push的tag部署；只有要回滚/部署指定历史版本时，才填`IMAGE_TAG`。
 
 构建工具是 buildah（显式 `aws ecr login`），不是 docker。构建时agent镜像用`private.agent_image`（JDK17/Maven/buildah规格）；不构建只部署时用`private.deploy_agent_image`（helm/kubectl/awscli规格），两者按`DO_BUILD`的值二选一。
 
