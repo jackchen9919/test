@@ -8,9 +8,9 @@
 - `test/`：checkout业务代码（GitHub）、buildah build、push镜像到ECR。
 - `prod/`：保留独立的 checkout+build+push+deploy，物理上是第2次build。
 
-`test/` 目录下只有**一个job**（`test/astrox.Jenkinsfile`），构建和部署合并在一起——是否构建由 `DO_BUILD` 参数控制（勾选=先checkout业务代码+buildah build+push再部署，走`test/pipline.groovy`；不勾选=跳过构建直接部署，走`test/deploy_pipline.groovy`），跟`prod`一样是"build+deploy同job"模式，build不是单独的job，只是job里的一个开关。
+`test/` 目录下只有**一个job**（`test/astrox.Jenkinsfile`），构建和部署合并在一起——是否构建由 `BRANCH_TAG` 参数是否为空控制（手动填分支名=先checkout业务代码+build+push再部署，走`test/pipline.groovy`；留空=跳过构建直接部署，走`test/deploy_pipline.groovy`），跟`prod`一样是"build+deploy同job"模式，build不是单独的job，只是job里"填不填分支名"这一个开关。`BRANCH_TAG`是手动输入的字符串参数（不是下拉框），填了之后pipeline会先跑一个`git ls-remote`校验分支是否真实存在，不存在直接报错终止，不会等到build跑到一半才失败。
 
-`dev`、`uat` 两个环境是纯部署job：不checkout业务代码/build/push，用一个 `IMAGE_TAG` 字符串参数——留空（默认）自动去ECR查该服务最新push的tag，填了则用这个值部署，用于回滚/部署指定历史版本，直接拿这个已经push好的镜像做 `更新values.yaml → helm upgrade`。test不勾选`DO_BUILD`时走的也是这套`IMAGE_TAG`逻辑。
+`dev`、`uat` 两个环境也是同样的`BRANCH_TAG`开关模式：默认留空=纯部署（不checkout业务代码/build/push，用`IMAGE_TAG`——留空自动去ECR查该服务最新push的tag，填了则用这个值部署，用于回滚/部署指定历史版本）；手动填分支名=脱离test单独构建部署（dev默认值是`main`，uat默认留空）。
 
 Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL)`），不再用固定的静态 `node(label)`；agent的K8s cloud名和镜像地址由各环境 `setting.groovy` 的 `private.jenkins_cloud`/`private.agent_image` 决定。
 
@@ -31,11 +31,11 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
 
 ## 操作步骤
 
-### test（构建 + 部署，同一个job，`DO_BUILD`参数控制是否构建）
+### test（构建 + 部署，同一个job，`BRANCH_TAG`是否填分支名控制是否构建）
 ```
 1）修改 test/setting.groovy，新增子字典（jenkins项目名做key，如没有将退出）——构建字段和部署字段写在同一个字典里：
     "xxx-service": {
-        # 构建相关字段（DO_BUILD勾选时用）
+        # 构建相关字段（BRANCH_TAG填了分支名时用）
         "github_url": "https://github.com/your-org/xxx-service.git", #项目代码（GitHub）
         "project": "xxx-service",        #gradle/maven模块名，同时也是helm templates里的{project}命名前缀
         "project_type": "java8",         #java8/newexchange_java8/java17_maven/nginx/go/nodejs/nodejs_explore/python
@@ -53,9 +53,9 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
         "no_ingress": "false",
         "websocket_port": "null",
     },
-2）Build with Parameters跑job：勾选`DO_BUILD`=先构建新镜像（走`test/pipline.groovy`）再部署；不勾选=跳过构建直接部署（`IMAGE_TAG`留空直接跑即可，自动去ECR取该服务最新一次push的tag）
+2）Build with Parameters跑job：`BRANCH_TAG`手动填分支名（如`main`）=先构建新镜像（走`test/pipline.groovy`，构建前会先用`git ls-remote`校验该分支真实存在）再部署；留空=跳过构建直接部署（`IMAGE_TAG`留空直接跑即可，自动去ECR取该服务最新一次push的tag）
 ```
-构建工具是 buildah（不是 docker），构建前会先 `aws ecr get-login-password | buildah login` 显式登录ECR，ECR仓库不存在会自动 `aws ecr create-repository` 创建。`DO_BUILD`勾选时用`private.agent_image`（JDK17/Maven/buildah规格），不勾选时用`private.deploy_agent_image`（helm/kubectl/awscli规格），同一个job按参数二选一。
+构建工具是 buildah（不是 docker），构建前会先 `aws ecr get-login-password | buildah login` 显式登录ECR，ECR仓库不存在会自动 `aws ecr create-repository` 创建。`BRANCH_TAG`填了分支名时用`private.agent_image`（JDK17/Maven/buildah规格），留空时用`private.deploy_agent_image`（helm/kubectl/awscli规格），同一个job按参数二选一。
 
 ### test / dev / uat（部署）
 ```
@@ -82,7 +82,7 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
     },
 2）跑对应job，**`IMAGE_TAG`留空直接构建即可**（自动去ECR取该服务最新一次push的tag，不用再去test job手动复制）；要部署/回滚到某个历史tag，在`IMAGE_TAG`里填那个tag
 ```
-`dev`/`uat`部署job的`IMAGE_TAG`自动解析用的ECR仓库路径是test构建时**实际push的路径**（读`test/setting.groovy`里该服务的`namespaces`覆盖值，不是字面量`"test"`），所以自动取tag前提是`test/setting.groovy`和`dev|uat/setting.groovy`里同一个服务的配置都已经写好。test不勾选`DO_BUILD`时则直接读自己那份`test/setting.groovy`里的`namespaces`，不需要跨文件。
+`dev`/`uat`部署job的`IMAGE_TAG`自动解析用的ECR仓库路径是test构建时**实际push的路径**（读`test/setting.groovy`里该服务的`namespaces`覆盖值，不是字面量`"test"`），所以自动取tag前提是`test/setting.groovy`和`dev|uat/setting.groovy`里同一个服务的配置都已经写好。test的`BRANCH_TAG`留空时则直接读自己那份`test/setting.groovy`里的`namespaces`，不需要跨文件。
 
 > **uat跨AWS账号前提**：test/dev共用ECR账号 `178092210163`，uat是独立账号 `696000197734`。`uat/setting.groovy` 的 `docker_repository_url` 已经指向test/dev共用registry（而不是uat自己账号），这样uat才能部署test构建产出的同一个镜像tag——但这要求test/dev账号下那个ECR仓库的仓库策略（repository policy）显式允许uat账号跨账号pull，这是AWS侧需要用户自行配置的前提条件，不是代码能解决的。
 
@@ -90,7 +90,7 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
 ```
 沿用上面test的build字段 + dev/uat的部署字段，两份都要写在 prod/setting.groovy 同一个子字典里。
 ```
-prod的agent镜像（`private.agent_image`）需要同时具备构建工具链（JDK17/Maven/buildah）和部署工具链（helm/kubectl/awscli），因为prod始终勾选构建，build+deploy在同一个job里跑（跟test不同的是prod没有`DO_BUILD`开关，永远构建）。
+prod的agent镜像（`private.agent_image`）需要同时具备构建工具链（JDK17/Maven/buildah）和部署工具链（helm/kubectl/awscli），因为prod始终构建，build+deploy在同一个job里跑（跟test不同的是prod没有`BRANCH_TAG`留空跳过构建这个开关，永远构建）。
 
 > GitHub凭据：仓库里目前的凭据ID只是占位，部署前必须去 Jenkins 里核实/替换成 Astrox 自己配置的真实凭据（各 `pipline.groovy` 里标了 TODO）。
 > Jenkins地址切换到 `https://jenkins.astroxs.com/` 不涉及本仓库代码，需要在 Jenkins 侧自行配置。

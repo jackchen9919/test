@@ -2,54 +2,19 @@
 //checkpoint时报NotSerializableException；后者的构造函数未在这个Jenkins实例的脚本沙箱白名单里，报RejectedAccessException。
 //改用pipeline-utility-steps插件自带的readJSON——这是正经Jenkins step而非裸Groovy对象，天然沙箱安全、返回值天然可序列化。
 //test环境：构建+部署合并成同一个job（原来是test/astrox.Jenkinsfile构建job + test/deploy.Jenkinsfile部署job两个独立job，现在合并）
-//是否走真实的checkout+build+push由DO_BUILD参数控制：勾选=先构建新镜像再部署（走test/pipline.groovy）；不勾选=跳过构建直接部署，用IMAGE_TAG或自动取ECR最新tag（走test/deploy_pipline.groovy）
+//是否走真实的checkout+build+push由BRANCH_TAG参数是否为空控制：填分支名=先构建新镜像再部署（走test/pipline.groovy）；留空=跳过构建直接部署，用IMAGE_TAG或自动取ECR最新tag（走test/deploy_pipline.groovy）
 //结构照抄prod/astrox.Jenkinsfile的"构建+部署在同一个job"模式
 //BRANCH_TAG/IMAGE_TAG以前分别声明在test/pipline.groovy、test/deploy_pipline.groovy里（load()加载的子pipeline），
-//declarative的parameters{}块在load()子pipeline里不会注册成真正的job级参数（UI选不到，一直显示不出分支下拉框）——统一收到这里的properties()才是唯一生效的参数声明，
+//declarative的parameters{}块在load()子pipeline里不会注册成真正的job级参数（UI选不到）——统一收到这里的properties()才是唯一生效的参数声明，
 //子文件里原来的parameters{}块已删除，避免两边各自调properties()互相覆盖、参数忽隐忽现
+//BRANCH_TAG/IMAGE_TAG都是"留空=默认行为，填了=手动覆盖"同一种模式：
+//BRANCH_TAG留空=不构建，直接部署（走IMAGE_TAG那套）；填分支名=用这个分支checkout+build+push再部署。
+//分支名手动输入，不再用下拉框选（试过Active Choices的CascadeChoiceParameter方案，能做到"不勾选就隐藏真实分支"，
+//但多引入uno-choice插件+一段git ls-remote的Groovy脚本，只为省一次下拉选择，投入产出不划算，改成手动输入+下面"Validate branch"阶段校验更简单）
 properties([
     parameters([
-        booleanParam(name: 'DO_BUILD', defaultValue: false, description: '是否先构建新镜像。勾选=用下面选的分支checkout业务代码并build+push新镜像再部署；不勾选=跳过构建直接部署（用IMAGE_TAG，或自动取ECR最新tag）——等价于以前独立的test部署job'),
-        //改用Active Choices的CascadeChoiceParameter（原来的gitParameter不支持"随DO_BUILD勾选状态变化"这种联动）：
-        //DO_BUILD勾选时下拉框显示真实分支列表（main排第一，即默认值）；不勾选时下拉框只有一个占位选项，避免误选到真实分支却根本不生效
-        //github_url要到"Check info"阶段checkout后从setting.groovy读才有，这里的脚本渲染发生在checkout之前，只能先固定写死repo地址；
-        //目前3个环境的业务仓库都是同一个repo，以后如果换repo，这里要跟着手动改，不会随setting.groovy自动联动
-        [$class: 'CascadeChoiceParameter',
-         name: 'BRANCH_TAG',
-         description: '仅在勾选DO_BUILD时生效，选要构建的分支；不勾选DO_BUILD时只有一个占位选项，选它不生效',
-         randomName: 'choice-parameter-branch-tag',
-         choiceType: 'PT_SINGLE_SELECT',
-         referencedParameters: 'DO_BUILD',
-         filterable: false,
-         filterLength: 1,
-         script: [$class: 'GroovyScript',
-             script: [classpath: [], sandbox: false, script: '''
-                 if (DO_BUILD.toString() == "true") {
-                     def branches = ["main"]
-                     try {
-                         def out = new StringBuilder(), err = new StringBuilder()
-                         def proc = ["git", "ls-remote", "--heads", "https://github.com/jackchen9919/test.git"].execute()
-                         proc.consumeProcessOutput(out, err)
-                         proc.waitForOrKill(15000)
-                         out.toString().eachLine { line ->
-                             def idx = line.indexOf("refs/heads/")
-                             if (idx >= 0) {
-                                 def b = line.substring(idx + "refs/heads/".length()).trim()
-                                 if (b && b != "main") { branches << b }
-                             }
-                         }
-                     } catch (Throwable t) {
-                         // 网络异常时至少还有main可选，不让下拉框整个报错
-                     }
-                     return branches
-                 } else {
-                     return ["不生效(未勾选DO_BUILD)"]
-                 }
-             '''],
-             fallbackScript: [classpath: [], sandbox: false, script: 'return ["main"]']
-         ]
-        ],
-        string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在不勾选DO_BUILD时生效。留空=自动取ECR里该服务最新一次push的tag（推荐，日常部署不用管这个）；填了=部署这个指定的历史tag（用于回滚）')
+        string(name: 'BRANCH_TAG', defaultValue: '', description: '留空=不构建，直接部署（用IMAGE_TAG，或自动取ECR最新tag）；填分支名=用这个分支checkout业务代码+build+push新镜像再部署。分支名手动输入，如果打错/该分支不存在，会在下面"Validate branch"阶段直接报错终止，不会跑到一半才失败'),
+        string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在BRANCH_TAG留空时生效。留空=自动取ECR里该服务最新一次push的tag（推荐，日常部署不用管这个）；填了=部署这个指定的历史tag（用于回滚）')
     ])
 ])
 
@@ -88,7 +53,7 @@ node('ofc-hk-bastion') {
                     env.aws_region = (code_info.private.aws_region).toString()
                     env.kubeconfig_credential_id = (code_info.private.kubeconfig_credential_id).toString()
 
-                    //build相关参数（DO_BUILD勾选时才会用到，但不勾选时也一起读出来无妨）
+                    //build相关参数（BRANCH_TAG填了才会用到，留空时也一起读出来无妨）
                     env.github_url = (code_info."${micro_key}".github_url).toString()
                     env.node_ins = (code_info."${micro_key}".node_ins).toString()
                     env.nodejs_version = (code_info."${micro_key}".nodejs_version).toString()
@@ -123,8 +88,21 @@ node('ofc-hk-bastion') {
                     env.max_replicas = (code_info."${micro_key}".max_replicas) ?: (code_info.private.max_replicas)
                 }
 
-                //DO_BUILD是"按钮"：勾选=真的checkout+build+push（test/pipline.groovy），不勾选=跳过构建直接部署（test/deploy_pipline.groovy，IMAGE_TAG或自动取ECR最新tag）
-                if (params.DO_BUILD) {
+                //BRANCH_TAG手动输入，可能打错字/分支已被删——build之前先用git ls-remote验证这个分支在业务仓库里真实存在，
+                //不存在就直接在这里报错终止，不会等checkout/build跑到一半才失败，报错信息也比git原生报错更好懂
+                if (params.BRANCH_TAG?.trim()) {
+                    stage('Validate branch') {
+                        def branch = params.BRANCH_TAG.trim()
+                        def exists = sh(script: "git ls-remote --exit-code --heads ${env.github_url} ${branch}", returnStatus: true) == 0
+                        if (!exists) {
+                            //TODO(以后如果业务仓库变成私有仓库): 这里的git ls-remote也要补上跟test/pipline.groovy里一致的凭据，否则私有仓库会被误判成"分支不存在"
+                            error "分支 \"${branch}\" 在 ${env.github_url} 里不存在，请检查BRANCH_TAG参数有没有打错"
+                        }
+                    }
+                }
+
+                //BRANCH_TAG是"开关"：填了分支名=真的checkout+build+push（test/pipline.groovy），留空=跳过构建直接部署（test/deploy_pipline.groovy，IMAGE_TAG或自动取ECR最新tag）
+                if (params.BRANCH_TAG?.trim()) {
                     load("astrox-helm-chart/test/pipline.groovy")
                 } else {
                     load("astrox-helm-chart/test/deploy_pipline.groovy")
@@ -136,7 +114,7 @@ node('ofc-hk-bastion') {
                     def image_tag_file = "/tmp/${env.JOB_NAME.replaceAll('/', '_')}-${env.BUILD_NUMBER}-image_tag.txt"
                     env.image_tag = readFile(image_tag_file).trim()
                     sh "rm -f ${image_tag_file}"
-                    if (params.DO_BUILD) {
+                    if (params.BRANCH_TAG?.trim()) {
                         def commit_id_file = "/tmp/${env.JOB_NAME.replaceAll('/', '_')}-${env.BUILD_NUMBER}-commit_id.txt"
                         env.commit_id = readFile(commit_id_file).trim()
                         sh "rm -f ${commit_id_file}"
