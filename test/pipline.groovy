@@ -97,9 +97,9 @@ pipeline {
                         aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${docker_repository_url}
                         docker build -t ${image_url}:${image_tag} .
                         docker push ${image_url}:${image_tag}
-                        //额外打latest标签并push：dev/uat"跳过构建直接部署"路径靠这个latest标签取真正最新的镜像，
-                        //不再依赖ECR describe-images按imagePushedAt排序——同一份构建内容多次push会共用同一个digest，
-                        //ECR只按digest记一条imagePushedAt，排序在这种场景下形同虚设，选出来的tag可能是任意一个历史tag而非真正最新构建
+                        # 额外打latest标签并push：dev/uat"跳过构建直接部署"路径靠这个latest标签取真正最新的镜像，
+                        # 不再依赖ECR describe-images按imagePushedAt排序——同一份构建内容多次push会共用同一个digest，
+                        # ECR只按digest记一条imagePushedAt，排序在这种场景下形同虚设，选出来的tag可能是任意一个历史tag而非真正最新构建
                         docker tag ${image_url}:${image_tag} ${image_url}:latest
                         docker push ${image_url}:latest
                     """
