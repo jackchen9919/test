@@ -95,6 +95,9 @@ node('ofc-hk-bastion') {
                         cp ${chart_name}/chart_templates/templates/* ${chart_name}/${env_tier}/templates/
                         cd ${chart_name}/${env_tier}
                         envsubst < template_${project_type}.values.yaml > values.yaml
+                        echo "----- rendered values.yaml (debug) -----"
+                        cat -A values.yaml
+                        echo "----- end values.yaml -----"
                         if [ "${websocket_port}" = 'null' ];then sed -i '/websocket/{N;N;d;}' values.yaml;fi
                         envsubst < template.Chart.yaml > Chart.yaml && rm -fr template_*
                         cd templates
