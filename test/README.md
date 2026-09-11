@@ -4,9 +4,9 @@ test目录下只有**一个job**（`test/astrox.Jenkinsfile`），构建和部�
 
 ## 构建+部署job（`test/astrox.Jenkinsfile`）
 
-用 `BRANCH_TAG` 参数（Build with Parameters里手动输入的字符串，不是下拉框）是否填了分支名决定这一次跑不跑构建，构建不是单独的job/按钮，只是这个job里的一个开关：
+用 `BRANCH_TAG` 参数（Build with Parameters里可搜索的下拉框，git-parameter插件实时`git ls-remote`拉真实分支，既能选也能打字过滤）是否选了分支名决定这一次跑不跑构建，构建不是单独的job/按钮，只是这个job里的一个开关：
 
-- **`BRANCH_TAG` 填分支名**（如`main`）：先用`git ls-remote`校验这个分支在业务仓库里真实存在（不存在直接报错终止，不会等checkout/build跑到一半才失败），再checkout GitHub业务代码、build、push镜像（走 `test/pipline.groovy`），接着做helm部署。日常提交新代码走这个。
+- **`BRANCH_TAG` 选分支**（如`main`）：checkout GitHub业务代码、build、push镜像（走 `test/pipline.groovy`），接着做helm部署。日常提交新代码走这个。pipeline里还留了一层`git ls-remote`校验兜底（防的是通过API等方式绕过下拉框传入不存在的分支名），不会等checkout/build跑到一半才失败。
 - **`BRANCH_TAG` 留空**：跳过构建，直接部署（走 `test/deploy_pipline.groovy`）。默认（`IMAGE_TAG`留空）会自动去ECR取该服务最新一次push的tag部署；只有要回滚/部署指定历史版本时，才填`IMAGE_TAG`。
 
 构建工具是 buildah（显式 `aws ecr login`），不是 docker。构建时agent镜像用`private.agent_image`（JDK17/Maven/buildah规格）；不构建只部署时用`private.deploy_agent_image`（helm/kubectl/awscli规格），两者按`BRANCH_TAG`是否填了分支名二选一。

@@ -9,11 +9,26 @@
 //子文件里原来的parameters{}块已删除，避免两边各自调properties()互相覆盖、参数忽隐忽现
 //BRANCH_TAG/IMAGE_TAG都是"留空=默认行为，填了=手动覆盖"同一种模式：
 //BRANCH_TAG留空=不构建，直接部署（走IMAGE_TAG那套）；填分支名=用这个分支checkout+build+push再部署。
-//分支名手动输入，不再用下拉框选（试过Active Choices的CascadeChoiceParameter方案，能做到"不勾选就隐藏真实分支"，
-//但多引入uno-choice插件+一段git ls-remote的Groovy脚本，只为省一次下拉选择，投入产出不划算，改成手动输入+下面"Validate branch"阶段校验更简单）
+//BRANCH_TAG用git-parameter插件做成可搜索下拉框（Jenkins已装此插件，跟dev-java-global-ex-msg等job用的是同一个），
+//列表是从下面useRepository写死的仓库实时git ls-remote拉的真实分支，既能选也能打字过滤。之前试过Active Choices的
+//Groovy脚本方案也能列真实分支，但要过Script Approval人工审批，每套Jenkins环境都要重新审一遍，运维成本更高；
+//git-parameter是原生参数类型，不用脚本、不用审批。useRepository目前写死成业务仓库地址：test/dev/uat三个环境
+//目前共用同一个仓库，以后换仓库/加用别的仓库的新服务，要记得同步改这里。
 properties([
     parameters([
-        string(name: 'BRANCH_TAG', defaultValue: '', description: '留空=不构建，直接部署（用IMAGE_TAG，或自动取ECR最新tag）；填分支名=用这个分支checkout业务代码+build+push新镜像再部署。分支名手动输入，如果打错/该分支不存在，会在下面"Validate branch"阶段直接报错终止，不会跑到一半才失败'),
+        [$class: 'GitParameterDefinition',
+         name: 'BRANCH_TAG',
+         type: 'PT_BRANCH',
+         description: '留空=不构建，直接部署（用IMAGE_TAG，或自动取ECR最新tag）；选分支=用这个分支checkout业务代码+build+push新镜像再部署。下拉列表是实时拉取的真实分支，支持打字过滤；如果通过API等方式绕过下拉框传入了不存在的分支名，会在下面"Validate branch"阶段直接报错终止，不会跑到一半才失败',
+         branchFilter: 'origin/(.*)',
+         tagFilter: '*',
+         sortMode: 'DESCENDING_SMART',
+         defaultValue: '',
+         selectedValue: 'DEFAULT',
+         useRepository: 'https://github.com/jackchen9919/test.git',
+         quickFilterEnabled: true,
+         listSize: '10',
+         requiredParameter: false],
         string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在BRANCH_TAG留空时生效。留空=自动取ECR里该服务最新一次push的tag（推荐，日常部署不用管这个）；填了=部署这个指定的历史tag（用于回滚）')
     ])
 ])

@@ -8,7 +8,7 @@
 - `test/`：checkout业务代码（GitHub）、buildah build、push镜像到ECR。
 - `prod/`：保留独立的 checkout+build+push+deploy，物理上是第2次build。
 
-`test/` 目录下只有**一个job**（`test/astrox.Jenkinsfile`），构建和部署合并在一起——是否构建由 `BRANCH_TAG` 参数是否为空控制（手动填分支名=先checkout业务代码+build+push再部署，走`test/pipline.groovy`；留空=跳过构建直接部署，走`test/deploy_pipline.groovy`），跟`prod`一样是"build+deploy同job"模式，build不是单独的job，只是job里"填不填分支名"这一个开关。`BRANCH_TAG`是手动输入的字符串参数（不是下拉框），填了之后pipeline会先跑一个`git ls-remote`校验分支是否真实存在，不存在直接报错终止，不会等到build跑到一半才失败。
+`test/` 目录下只有**一个job**（`test/astrox.Jenkinsfile`），构建和部署合并在一起——是否构建由 `BRANCH_TAG` 参数是否为空控制（手动填分支名=先checkout业务代码+build+push再部署，走`test/pipline.groovy`；留空=跳过构建直接部署，走`test/deploy_pipline.groovy`），跟`prod`一样是"build+deploy同job"模式，build不是单独的job，只是job里"填不填分支名"这一个开关。`BRANCH_TAG`用Jenkins自带的git-parameter插件做成可搜索下拉框，下拉列表是实时`git ls-remote`拉取的真实分支，既能选也能打字过滤；pipeline里还留了一层`git ls-remote`校验兜底（防的是通过API等方式绕过下拉框传入不存在的分支名），不会等到build跑到一半才失败。
 
 `dev`、`uat` 两个环境也是同样的`BRANCH_TAG`开关模式：默认留空=纯部署（不checkout业务代码/build/push，用`IMAGE_TAG`——留空自动去ECR查该服务最新push的tag，填了则用这个值部署，用于回滚/部署指定历史版本）；手动填分支名=脱离test单独构建部署（dev默认值是`main`，uat默认留空）。
 
@@ -53,7 +53,7 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
         "no_ingress": "false",
         "websocket_port": "null",
     },
-2）Build with Parameters跑job：`BRANCH_TAG`手动填分支名（如`main`）=先构建新镜像（走`test/pipline.groovy`，构建前会先用`git ls-remote`校验该分支真实存在）再部署；留空=跳过构建直接部署（`IMAGE_TAG`留空直接跑即可，自动去ECR取该服务最新一次push的tag）
+2）Build with Parameters跑job：`BRANCH_TAG`下拉选一个分支（如`main`，可打字过滤）=先构建新镜像（走`test/pipline.groovy`）再部署；留空=跳过构建直接部署（`IMAGE_TAG`留空直接跑即可，自动去ECR取该服务最新一次push的tag）
 ```
 构建工具是 buildah（不是 docker），构建前会先 `aws ecr get-login-password | buildah login` 显式登录ECR，ECR仓库不存在会自动 `aws ecr create-repository` 创建。`BRANCH_TAG`填了分支名时用`private.agent_image`（JDK17/Maven/buildah规格），留空时用`private.deploy_agent_image`（helm/kubectl/awscli规格），同一个job按参数二选一。
 
