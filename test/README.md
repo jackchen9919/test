@@ -4,18 +4,18 @@ test目录下只有**一个job**（`test/astrox.Jenkinsfile`），构建和部�
 
 ## 构建+部署job（`test/astrox.Jenkinsfile`）
 
-用 `BRANCH_TAG` 参数（Build with Parameters里手动输入的字符串，不是下拉框）是否填了分支名决定这一次跑不跑构建，构建不是单独的job/按钮，只是这个job里的一个开关：
+用 `BRANCH_TAG` 参数（Active Choices动态下拉框，脚本实时`git ls-remote`拉取业务仓库真实存在的分支）选的是不是`SKIP_BUILD`决定这一次跑不跑构建，构建不是单独的job/按钮，只是这个job里的一个开关：
 
-- **`BRANCH_TAG` 填分支名**（如`main`）：先用`git ls-remote`校验这个分支在业务仓库里真实存在（不存在直接报错终止，不会等checkout/build跑到一半才失败），再checkout GitHub业务代码、build、push镜像（走 `test/pipline.groovy`），接着做helm部署。日常提交新代码走这个。
-- **`BRANCH_TAG` 留空**：跳过构建，直接部署（走 `test/deploy_pipline.groovy`）。默认（`IMAGE_TAG`留空）会自动去ECR取该服务最新一次push的tag部署；只有要回滚/部署指定历史版本时，才填`IMAGE_TAG`。
+- **`BRANCH_TAG` 选真实分支**（如`main`，下拉列表实时拉取）：构建前还会再用`git ls-remote`兜底校验一次这个分支真实存在（防止直接调API绕过下拉框传入无效/已删除分支；不存在直接报错终止，不会等checkout/build跑到一半才失败），再checkout GitHub业务代码、build、push镜像（走 `test/pipline.groovy`），接着做helm部署。日常提交新代码走这个。
+- **`BRANCH_TAG` 选`SKIP_BUILD`**（下拉列表固定排在最前的字面选项，不是留空）：跳过构建，直接部署（走 `test/deploy_pipline.groovy`）。默认（`IMAGE_TAG`留空）会自动去ECR取该服务最新一次push的tag部署；只有要回滚/部署指定历史版本时，才填`IMAGE_TAG`。
 
-构建工具是 buildah（显式 `aws ecr login`），不是 docker。构建时agent镜像用`private.agent_image`（JDK17/Maven/buildah规格）；不构建只部署时用`private.deploy_agent_image`（helm/kubectl/awscli规格），两者按`BRANCH_TAG`是否填了分支名二选一。
+构建工具是 buildah（显式 `aws ecr login`），不是 docker。构建时agent镜像用`private.agent_image`（JDK17/Maven/buildah规格）；不构建只部署时用`private.deploy_agent_image`（helm/kubectl/awscli规格），两者按`BRANCH_TAG`选真实分支还是`SKIP_BUILD`二选一。
 
 `test/setting.groovy` 的子字典需要build+部署字段都写在同一个字典里：
 
 | 字段 | 说明 |
 |---|---|
-| `github_url`/`node_ins`/`nodejs_version`等 | 仅`BRANCH_TAG`填了分支名时用，业务代码checkout/构建参数 |
+| `github_url`/`node_ins`/`nodejs_version`等 | 仅`BRANCH_TAG`下拉选真实分支时用，业务代码checkout/构建参数 |
 | `app_name` | 镜像名/应用名 |
 | `project` | helm templates里的`{project}`命名前缀 |
 | `project_type` | java8/newexchange_java8/java17_maven/nginx/go/nodejs/nodejs_explore/python |
