@@ -47,6 +47,9 @@ pipeline {
                     def commit_id = sh(script: 'git rev-parse --short=8 HEAD', returnStdout: true).trim()
                     // Set the commit id as an environment variable
                     env.commit_id = commit_id
+                    //load()加载的声明式pipeline跑在独立node()/workspace里，这里设的env.*不会可靠带回外层scripted pipeline
+                    //（Jenkins load()跨作用域的已知限制），改落临时文件，外层Update values.yaml阶段前读回来
+                    writeFile file: "/tmp/${env.JOB_NAME.replaceAll('/', '_')}-${env.BUILD_NUMBER}-commit_id.txt", text: env.commit_id
                 }
             }
         }
@@ -94,6 +97,7 @@ pipeline {
                     }
                     // build and pushing — 这个tag就是dev/uat部署job要填的IMAGE_TAG
                     env.image_tag = "${tagAfterSlash}-${commit_id}-${BUILD_ID}"
+                    writeFile file: "/tmp/${env.JOB_NAME.replaceAll('/', '_')}-${env.BUILD_NUMBER}-image_tag.txt", text: env.image_tag
                     // ECR仓库若不存在则动态创建；显式ECR登录
                     // 构建工具改用docker（jenkins-sg.hichain.me的静态节点没装buildah，但jenkins用户已在docker组里）
                     sh """
