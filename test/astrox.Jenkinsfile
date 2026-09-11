@@ -27,7 +27,7 @@ properties([
          selectedValue: 'DEFAULT',
          useRepository: 'https://github.com/jackchen9919/test.git',
          quickFilterEnabled: true,
-         listSize: '1',
+         listSize: '5',
          requiredParameter: false],
         string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在BRANCH_TAG留空时生效。留空=自动取ECR里该服务最新一次push的tag（推荐，日常部署不用管这个）；填了=部署这个指定的历史tag（用于回滚）')
     ])
