@@ -24,7 +24,7 @@
         "no_ingress": "false",
     },
 
-    "apisix-route": {
+    "dev-java-apisix-route": {
         "app_name": "apisix-route-test",
         "project": "apisix-route-test",
         "project_type": "nginx",

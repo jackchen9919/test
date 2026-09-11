@@ -44,8 +44,8 @@ node('ofc-hk-bastion') {
                     }
                 }
                 stage('Check info') {
-                    //job已从文件夹里的apisix-route-test改成扁平命名dev-java-apisix-route，查表用的key要剥掉环境前缀
-                    def micro_key = env.JOB_BASE_NAME.replaceFirst(/^dev-java-/, '')
+                    //setting.groovy里的key跟job名保持完全一致(dev-java-apisix-route)，不再剥环境前缀
+                    def micro_key = env.JOB_BASE_NAME
                     //读取配置文件（部署相关字段，build相关字段在 test/setting.groovy）
                     def file = readFile("astrox-helm-chart/dev/setting.groovy")
                     def code_info = readJSON text: file
@@ -73,12 +73,14 @@ node('ofc-hk-bastion') {
                     env.replicas = (code_info."${micro_key}".replicas).toString()
                     //镜像统一从 test 构建job产出的共享仓库路径拉取，跟本环境自己的k8s namespace解耦
                     //ECR路径段必须跟test构建时实际push的路径一致——不能假定字面量"test"，因为test/setting.groovy里这个服务的namespaces可能被覆盖成"test-product"这种业务线路径
+                    //test/setting.groovy的key已改成跟sit job名一致(sit-java-apisix-route)，不是本job名——同一个服务把dev-java-替换成sit-java-即可推出对应key
+                    def test_micro_key = env.JOB_BASE_NAME.replaceFirst(/^dev-java-/, 'sit-java-')
                     def test_setting = readJSON text: readFile("astrox-helm-chart/test/setting.groovy")
-                    env.test_namespaces = (test_setting."${micro_key}".namespaces) ?: (test_setting.private.namespaces)
+                    env.test_namespaces = (test_setting."${test_micro_key}".namespaces) ?: (test_setting.private.namespaces)
                     //build相关参数（BRANCH_TAG填了才会用到），跟test共用一份配置，不在dev/setting.groovy里重复维护
-                    env.github_url = (test_setting."${micro_key}".github_url).toString()
-                    env.node_ins = (test_setting."${micro_key}".node_ins).toString()
-                    env.nodejs_version = (test_setting."${micro_key}".nodejs_version).toString()
+                    env.github_url = (test_setting."${test_micro_key}".github_url).toString()
+                    env.node_ins = (test_setting."${test_micro_key}".node_ins).toString()
+                    env.nodejs_version = (test_setting."${test_micro_key}".nodejs_version).toString()
                     env.aws_region = (code_info.private.aws_region).toString()
                     env.image_url = "${docker_repository_url}/${test_namespaces}/${app_name}"
                     env.actuator_port = (code_info."${micro_key}".actuator_port).toString()

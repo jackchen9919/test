@@ -25,7 +25,7 @@
         "no_ingress": "false",
     },
 
-    "apisix-route": {
+    "sit-java-apisix-route": {
         "github_url": "https://github.com/jackchen9919/test.git",
         "node_ins": "npm run build",
         "nodejs_version": "NodeJS 16.14.1",
