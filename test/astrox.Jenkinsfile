@@ -100,10 +100,11 @@ node('ofc-hk-bastion') {
 
                 // value.yaml deliver deployment full
                 stage('Update values.yaml') {
-                    //临时诊断：确认withEnv构造时/进shell后各自看到的image_tag值
+                    //临时诊断：怀疑节点上有同名image_tag被别的地方(profile脚本/节点级环境变量)覆盖，换个绝不会撞名的变量名对照测试
                     echo "DEBUG pre-withEnv image_tag=[${env.image_tag}]"
-                    withEnv(["image_tag=${env.image_tag}", "commit_id=${env.commit_id ?: ''}"]) {
-                        sh 'echo "DEBUG in-withEnv shell image_tag=[$image_tag]"'
+                    sh 'echo "DEBUG baseline env: image_tag=[$image_tag]"; env | grep -i image_tag || echo NONE_IN_ENV; grep -rn "image_tag" /etc/profile /etc/profile.d/*.sh ~/.bashrc ~/.bash_profile ~/.profile 2>/dev/null || echo NONE_IN_PROFILE'
+                    withEnv(["image_tag=${env.image_tag}", "commit_id=${env.commit_id ?: ''}", "ZZZ_TAG_TEST=${env.image_tag}"]) {
+                        sh 'echo "DEBUG in-withEnv shell image_tag=[$image_tag] ZZZ_TAG_TEST=[$ZZZ_TAG_TEST]"'
                         sh '''
                             rm -rf ${chart_name}/${env_tier}/templates
                             mkdir -p ${chart_name}/${env_tier}/templates
