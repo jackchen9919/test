@@ -100,11 +100,11 @@ node('ofc-hk-bastion') {
 
                 // value.yaml deliver deployment full
                 stage('Update values.yaml') {
-                    //临时诊断：怀疑节点上有同名image_tag被别的地方(profile脚本/节点级环境变量)覆盖，换个绝不会撞名的变量名对照测试
-                    echo "DEBUG pre-withEnv image_tag=[${env.image_tag}]"
-                    sh 'echo "DEBUG baseline env: image_tag=[$image_tag]"; env | grep -i image_tag || echo NONE_IN_ENV; grep -rn "image_tag" /etc/profile /etc/profile.d/*.sh ~/.bashrc ~/.bash_profile ~/.profile 2>/dev/null || echo NONE_IN_PROFILE'
-                    withEnv(["image_tag=${env.image_tag}", "commit_id=${env.commit_id ?: ''}", "ZZZ_TAG_TEST=${env.image_tag}"]) {
-                        sh 'echo "DEBUG in-withEnv shell image_tag=[$image_tag] ZZZ_TAG_TEST=[$ZZZ_TAG_TEST]"'
+                    //实测确认：这台节点上"image_tag"/"commit_id"这两个变量名，无论env.X赋值还是withEnv显式注入，到shell里都会被别处(节点级/全局环境变量配置，profile脚本里未找到)覆盖成空值——
+                    //是变量名撞车，不是传值机制的问题（同一withEnv里另起一个不常见的名字能正常透传，验证过）。
+                    //规避方式：shell侧只用不会撞车的变量名接住真实值，envsubst前先用sed把模板里的${image_tag}/${commit_id}占位符直接替换成字面值，
+                    //这样就不需要环境变量名叫"image_tag"/"commit_id"，也就不会被覆盖；其余占位符仍交给envsubst按环境变量正常处理。
+                    withEnv(["IMAGE_TAG_VALUE=${env.image_tag}", "COMMIT_ID_VALUE=${env.commit_id ?: ''}"]) {
                         sh '''
                             rm -rf ${chart_name}/${env_tier}/templates
                             mkdir -p ${chart_name}/${env_tier}/templates
@@ -112,6 +112,7 @@ node('ofc-hk-bastion') {
                             cp ${chart_name}/chart_templates/template_*.values.yaml ${chart_name}/${env_tier}/
                             cp ${chart_name}/chart_templates/templates/* ${chart_name}/${env_tier}/templates/
                             cd ${chart_name}/${env_tier}
+                            sed -i "s|\\${image_tag}|${IMAGE_TAG_VALUE}|g; s|\\${commit_id}|${COMMIT_ID_VALUE}|g" template_${project_type}.values.yaml template.Chart.yaml
                             envsubst < template_${project_type}.values.yaml > values.yaml
                             if [ "${websocket_port}" = 'null' ];then sed -i '/websocket/{N;N;d;}' values.yaml;fi
                             envsubst < template.Chart.yaml > Chart.yaml && rm -fr template_*
