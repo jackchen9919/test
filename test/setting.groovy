@@ -11,7 +11,7 @@
 
         "env_tier": "test",
         "deploy_agent_image": "alpine/k8s:1.28.4",
-        "node_select": "environment: test",
+        "node_select": "environment: sit",
         "kubeconfig_credential_id": "ofc-test",
         "nfs_server": "fs-0575ae6fd27edf058.efs.ap-southeast-1.amazonaws.com",
         "log_nfs_server": "fs-078f16b1172edf396.efs.ap-southeast-1.amazonaws.com",

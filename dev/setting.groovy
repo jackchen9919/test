@@ -1,6 +1,6 @@
 {
     "private": {
-        "docker_repository_url": "178092210163.dkr.ecr.ap-southeast-1.amazonaws.com",
+        "docker_repository_url": "815644216915.dkr.ecr.ap-southeast-1.amazonaws.com",
         "aws_region": "ap-southeast-1",
         "jenkins_cloud": "kubernetes",
         "agent_image": "alpine/k8s:1.28.4",
@@ -11,7 +11,7 @@
         "limits_mem": "4G",
         "requests_cpu": "0.1",
         "requests_mem": "0.2G",
-        "node_select": "environment: dev",
+        "node_select": "environment: nova-dev",
         "kubeconfig_credential_id": "ofc-test",
         "nfs_server": "fs-0575ae6fd27edf058.efs.ap-southeast-1.amazonaws.com",
         "log_nfs_server": "fs-078f16b1172edf396.efs.ap-southeast-1.amazonaws.com",
