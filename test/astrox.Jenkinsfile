@@ -10,17 +10,45 @@
 properties([
     parameters([
         booleanParam(name: 'DO_BUILD', defaultValue: false, description: '是否先构建新镜像。勾选=用下面选的分支checkout业务代码并build+push新镜像再部署；不勾选=跳过构建直接部署（用IMAGE_TAG，或自动取ECR最新tag）——等价于以前独立的test部署job'),
-        gitParameter(name: 'BRANCH_TAG',
-                     type: 'PT_BRANCH_TAG',
-                     branchFilter: 'origin/(.*)',
-                     defaultValue: 'main',
-                     selectedValue: 'DEFAULT',
-                     sortMode: 'DESCENDING_SMART',
-                     quickFilterEnabled: 'True',
-                     description: '仅在勾选DO_BUILD时生效，选要构建的分支',
-                     //github_url要到"Check info"阶段checkout后从setting.groovy读才有，但gitParameter渲染下拉框发生在checkout之前，只能先固定写死；
-                     //目前3个环境的业务仓库都是同一个repo，以后如果换repo，这里要跟着手动改，不会随setting.groovy自动联动
-                     useRepository: 'https://github.com/jackchen9919/test.git'),
+        //改用Active Choices的CascadeChoiceParameter（原来的gitParameter不支持"随DO_BUILD勾选状态变化"这种联动）：
+        //DO_BUILD勾选时下拉框显示真实分支列表（main排第一，即默认值）；不勾选时下拉框只有一个占位选项，避免误选到真实分支却根本不生效
+        //github_url要到"Check info"阶段checkout后从setting.groovy读才有，这里的脚本渲染发生在checkout之前，只能先固定写死repo地址；
+        //目前3个环境的业务仓库都是同一个repo，以后如果换repo，这里要跟着手动改，不会随setting.groovy自动联动
+        [$class: 'CascadeChoiceParameter',
+         name: 'BRANCH_TAG',
+         description: '仅在勾选DO_BUILD时生效，选要构建的分支；不勾选DO_BUILD时只有一个占位选项，选它不生效',
+         randomName: 'choice-parameter-branch-tag',
+         choiceType: 'PT_SINGLE_SELECT',
+         referencedParameters: 'DO_BUILD',
+         filterable: false,
+         filterLength: 1,
+         script: [$class: 'GroovyScript',
+             script: [classpath: [], sandbox: false, script: '''
+                 if (DO_BUILD.toString() == "true") {
+                     def branches = ["main"]
+                     try {
+                         def out = new StringBuilder(), err = new StringBuilder()
+                         def proc = ["git", "ls-remote", "--heads", "https://github.com/jackchen9919/test.git"].execute()
+                         proc.consumeProcessOutput(out, err)
+                         proc.waitForOrKill(15000)
+                         out.toString().eachLine { line ->
+                             def idx = line.indexOf("refs/heads/")
+                             if (idx >= 0) {
+                                 def b = line.substring(idx + "refs/heads/".length()).trim()
+                                 if (b && b != "main") { branches << b }
+                             }
+                         }
+                     } catch (Throwable t) {
+                         // 网络异常时至少还有main可选，不让下拉框整个报错
+                     }
+                     return branches
+                 } else {
+                     return ["不生效(未勾选DO_BUILD)"]
+                 }
+             '''],
+             fallbackScript: [classpath: [], sandbox: false, script: 'return ["main"]']
+         ]
+        ],
         string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在不勾选DO_BUILD时生效。留空=自动取ECR里该服务最新一次push的tag（推荐，日常部署不用管这个）；填了=部署这个指定的历史tag（用于回滚）')
     ])
 ])
