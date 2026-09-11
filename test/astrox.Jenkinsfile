@@ -22,7 +22,8 @@ node('ofc-hk-bastion') {
                     }
                 }
                 stage('Check info') {
-                    def micro_key = env.JOB_BASE_NAME
+                    //job已从文件夹里的apisix-route-test改成扁平命名sit-java-apisix-route，查表用的key要剥掉环境前缀
+                    def micro_key = env.JOB_BASE_NAME.replaceFirst(/^sit-java-/, '')
                     def file = readFile("astrox-helm-chart/test/setting.groovy")
                     def jsonSlurper = new JsonSlurper()
                     def code_info = jsonSlurper.parseText(file)

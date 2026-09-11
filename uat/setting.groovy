@@ -23,7 +23,7 @@
         "no_ingress": "false",
     },
 
-    "apisix-route-test": {
+    "apisix-route": {
         "app_name": "apisix-route-test",
         "project": "apisix-route-test",
         "project_type": "nginx",
