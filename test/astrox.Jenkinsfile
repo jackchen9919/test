@@ -1,11 +1,6 @@
-import groovy.json.JsonSlurperClassic
-//JsonSlurper实例不能作为CPS局部变量跨step存活（Jenkins会在load()等step前checkpoint整个脚本状态，
-//遇到不可序列化的JsonSlurper对象会报NotSerializableException）——统一收到@NonCPS方法里执行，只把解析结果传回CPS作用域；
-//默认JsonSlurper()返回的LazyMap本身也不可序列化（实测踩过），改用JsonSlurperClassic()返回普通LinkedHashMap/ArrayList，可序列化
-@NonCPS
-def parseJsonText(String text) {
-    return new JsonSlurperClassic().parseText(text)
-}
+//JsonSlurper()/JsonSlurperClassic()都踩过坑：前者返回的LazyMap不可序列化、Groovy CPS在load()等step前
+//checkpoint时报NotSerializableException；后者的构造函数未在这个Jenkins实例的脚本沙箱白名单里，报RejectedAccessException。
+//改用pipeline-utility-steps插件自带的readJSON——这是正经Jenkins step而非裸Groovy对象，天然沙箱安全、返回值天然可序列化。
 //test环境：构建+部署合并成同一个job（原来是test/astrox.Jenkinsfile构建job + test/deploy.Jenkinsfile部署job两个独立job，现在合并）
 //是否走真实的checkout+build+push由DO_BUILD参数控制：勾选=先构建新镜像再部署（走test/pipline.groovy）；不勾选=跳过构建直接部署，用SPECIFY_TAG/IMAGE_TAG或自动取ECR最新tag（走test/deploy_pipline.groovy）
 //结构照抄prod/astrox.Jenkinsfile的"构建+部署在同一个job"模式
@@ -48,7 +43,7 @@ node('ofc-hk-bastion') {
                     //job已从文件夹里的apisix-route-test改成扁平命名sit-java-apisix-route，查表用的key要剥掉环境前缀
                     def micro_key = env.JOB_BASE_NAME.replaceFirst(/^sit-java-/, '')
                     def file = readFile("astrox-helm-chart/test/setting.groovy")
-                    def code_info = parseJsonText(file)
+                    def code_info = readJSON text: file
 
                     def key = code_info.get(micro_key)
 
