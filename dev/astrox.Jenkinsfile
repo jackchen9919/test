@@ -182,15 +182,19 @@ node('ofc-hk-bastion') {
                     //when {
                     //    expression { env.product_line == "dev" } //设置先对条件进行判断，符合预期才进入steps
                     //}
+                    //实测发现："image_tag"这个变量名在这个stage的sh步骤里同样撞车（跟test环境同款问题，见test/astrox.Jenkinsfile注释），
+                    //之前这行 [ "${image_tag}" = "latest" ] 一直读到空字符串，rollout restart从没真正触发过。规避方式同test：换个不撞车的名字接住真实值。
                     withCredentials([file(credentialsId: env.kubeconfig_credential_id, variable: 'KUBECONFIG')]) {
-                        sh '''
-                            helm list -n ${namespaces}|grep ${app_name} &> /dev/null
-                            helm upgrade ${app_name} --install -n ${namespaces} ./${chart_name}/${env_tier}
-                            if [ "${image_tag}" = "latest" ]; then
-                                echo "IMAGE_TAG用的是浮动的:latest标签，Deployment里镜像字符串没变，helm upgrade不会自动触发滚动更新——手动rollout restart强制重新拉取"
-                                kubectl rollout restart ${kind_name} -n ${namespaces} ${app_name}
-                            fi
-                        '''
+                        withEnv(["IMAGE_TAG_VALUE=${env.image_tag}"]) {
+                            sh '''
+                                helm list -n ${namespaces}|grep ${app_name} &> /dev/null
+                                helm upgrade ${app_name} --install -n ${namespaces} ./${chart_name}/${env_tier}
+                                if [ "${IMAGE_TAG_VALUE}" = "latest" ]; then
+                                    echo "IMAGE_TAG用的是浮动的:latest标签，Deployment里镜像字符串没变，helm upgrade不会自动触发滚动更新——手动rollout restart强制重新拉取"
+                                    kubectl rollout restart ${kind_name} -n ${namespaces} ${app_name}
+                                fi
+                            '''
+                        }
                     }
                 }
 
