@@ -19,6 +19,14 @@ spec:
     backends:
       - serviceName: {{ $.Values.appname }}
         servicePort: {{ $.Values.probe.port }}
+        {{- if $.Values.canary }}
+        {{- if $.Values.canary.enabled }}
+        weight: {{ sub 100 $.Values.canary.weight }}
+      - serviceName: {{ $.Values.appname }}-canary
+        servicePort: {{ $.Values.probe.port }}
+        weight: {{ $.Values.canary.weight }}
+        {{- end }}
+        {{- end }}
     plugins:
       - name: proxy-rewrite
         enable: true

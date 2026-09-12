@@ -55,6 +55,26 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
 - 无论跑哪个job，只要它跟当前对象的实际kind不一致，`helm upgrade`就会删掉旧对象重建新kind的对象（Deployment↔StatefulSet没有原地转换），带来一次短暂的服务中断（`replicas:1`时尤其明显）。
 - 两个job如果时间点上跑得很接近，除了已知的"release already exists"竞态外，还可能出现"一个job刚把对象转成StatefulSet，另一个紧接着又把它转回Deployment"这种来回抖动，需要注意错开触发时间。
 
+### `sit`环境的灰度发布（APISIX加权分流，v1，仅`sit-java-apisix-route`）
+
+用`ApisixRoute`（v2 CRD）原生的多`backend` + `weight`字段做流量分流，不引入Argo Rollouts/Flagger这类额外controller，也不用"调副本数比例"这种伪灰度。机制：`apisixroute.yaml`的`backends`数组平时只有一个（稳定版Service，无`weight`字段=100%流量）；灰度开启时变成两个backend——稳定版权重`100-W`，新增的`{{ .Values.appname }}-canary` Service权重`W`（`W`是Jenkins构建参数`CANARY_WEIGHT`，0-100）。canary版对应一套独立的`canary-deployment.yaml`/`canary-service.yaml`（label/selector都带`-canary`后缀，跟稳定版完全隔离，不会被稳定版的HPA/podAntiAffinity选中）。
+
+**默认不开灰度、不传参数行为不变**：`CANARY_WEIGHT`留空时，`values.yaml`里`canary.enabled`渲染成`false`，`apisixroute.yaml`/`canary-deployment.yaml`/`canary-service.yaml`里的`{{- if .Values.canary }}{{- if .Values.canary.enabled }}`两层guard整体不渲染，跟没有灰度这个功能之前的产物逐字节一致。
+
+**开启灰度时，稳定版镜像不会被这次构建覆盖**：Jenkinsfile会先从集群里查线上稳定版当前真实镜像（`kubectl get ${kind_name} ... -o jsonpath='{.spec.template.spec.containers[0].image}'`），渲染进稳定版的`image`字段；这次构建/指定的新镜像只会渲染进canary Deployment。这样`helm upgrade`不会把稳定版的Pod重新调度，只新建canary这一套对象。**前提**：线上必须已有一版正常部署过的稳定版本，不能在第一次部署时就直接带`CANARY_WEIGHT`（会报错终止，提示先跑一次不带该参数的普通部署）。
+
+**晋升/回滚都是"再跑一次普通部署"，不需要额外操作**：
+- 晋升（把canary转正）：不带`CANARY_WEIGHT`，`IMAGE_TAG`/分支指向canary验证的那个版本，正常部署一次。
+- 回滚（放弃canary）：不带`CANARY_WEIGHT`，`IMAGE_TAG`指回灰度开始前的旧稳定版tag，正常部署一次。
+
+两种情况下，helm渲染出的manifest里都不再包含canary Deployment/Service（`apisixroute.yaml`收敛回单backend），Helm 3会自动把上一版渲染过、这一版不再渲染的资源从release里清理掉——不需要额外写清理脚本。
+
+**v1已知的简化/边界（不是遗漏）**：
+- canary固定是`kind: Deployment`，不跟随线上稳定版当前的`kind_name`做StatefulSet canary。
+- canary workload跳过skywalking initContainer和nfs/log_nfs挂载，只覆盖sit这种nginx纯静态场景；以后要在其它project_type上开灰度，得先补齐这部分。
+- 权重字段按"百分比"设计（canary=W，稳定=100-W）方便理解，虽然APISIX实际按相对比例分配、并不要求两个weight相加等于100。
+- `sit-java-apisix-route-2`（上面那个kind_name覆盖测试job）**没有接入灰度参数**——如果在灰度验证窗口期误触发job2，job2渲染的values没有`canary.enabled=true`，会把canary资源和`apisixroute`的第二个backend一起清掉，相当于把灰度状态重置。这个交互只是文档提醒"灰度验证期间不要触发job2"，不做锁/互斥，跟前面kind_name竞态"手动重触发、暂不加锁"的态度一致。
+
 ### `chart_templates/`（helm chart模版共享目录）
 
 `template.Chart.yaml`、`templates/*.yaml`、`templates/_helpers.tpl`、`template_<project_type>.values.yaml` 这些helm chart文件现在只在仓库根目录的 `chart_templates/` 里维护**一份**，不再在 `dev/`、`uat/`、`prod/`（以及新增的test部署job）各自重复一份——以前是逐环境手工复制维护，改一处要改三四处，还产生过`templates/hpa.yaml`内容重复粘贴、`values.yaml`镜像tag/ingress hosts格式不统一之类的真实bug。

@@ -1,0 +1,76 @@
+{{- if .Values.canary }}
+{{- if .Values.canary.enabled }}
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: {{ .Values.appname }}-canary
+  namespace: {{ .Values.namespace }}
+  labels:
+    appname: {{ .Values.appname }}-canary
+spec:
+  replicas: {{ .Values.canary.replicaCount | default 1 }}
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      appname: {{ .Values.appname }}-canary
+  template:
+    metadata:
+      labels:
+        appname: {{ .Values.appname }}-canary
+    spec:
+      containers:
+      - image: {{ .Values.canary.image }}
+        name: {{ .Values.appname }}-canary
+        env:
+        - name: MaxRAMPercentage
+          value: {{ .Values.MaxRAMPercentage | default "75.0" | quote }}
+        imagePullPolicy: Always
+        securityContext:
+          capabilities:
+            add: ["SYS_PTRACE"]
+        ports:
+          {{- range $i := .Values.ports }}
+          - containerPort: {{ $i.port }}
+            protocol: {{ $i.protocol }}
+            name: {{ $i.name }}
+          {{- end }}
+        livenessProbe:
+          failureThreshold: 20
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: {{ .Values.probe.port }}
+          timeoutSeconds: 5
+        readinessProbe:
+          failureThreshold: 20
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          successThreshold: 1
+          tcpSocket:
+            port: {{ .Values.probe.port }}
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: {{ .Values.limits.cpu }}
+            memory: {{ .Values.limits.memory }}
+          requests:
+            cpu: {{ .Values.requests.cpu }}
+            memory: {{ .Values.requests.memory }}
+      restartPolicy: Always
+      {{- if .Values.nodeSelector }}
+      nodeSelector:
+      {{- end }}
+        {{- range $k,$v := .Values.nodeSelector }}
+        {{ $k }}: {{ $v }}
+        {{- end }}
+      {{- if .Values.tolerations }}
+      tolerations:
+      {{- end }}
+        {{- range $i := .Values.tolerations }}
+        - key: {{ $i.key }}
+          value: {{ $i.value }}
+          effect: {{ $i.effect }}
+        {{- end }}
+{{- end }}
+{{- end }}

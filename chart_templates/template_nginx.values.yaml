@@ -5,7 +5,7 @@ kind: ${kind_name}
 replicaCount: ${replicas}
 appname: ${app_name}
 version: ${commit_id}
-image: ${image_url}:${image_tag}
+image: ${stable_image}
 namespace: ${namespaces}
 project_type: ${project_type}
 
@@ -77,3 +77,10 @@ tolerations:
     effect: "NoExecute"
 
 affinity: {}
+
+# 灰度发布：默认不开启（canary_enabled留空/false时，image走上面正常的stable_image，跟没有这个字段之前行为完全一致）
+canary:
+  enabled: ${canary_enabled}
+  weight: ${canary_weight}
+  image: ${canary_image}
+  replicaCount: ${canary_replicas}

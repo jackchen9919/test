@@ -32,3 +32,7 @@ test目录下只有**一个job**（`test/astrox.Jenkinsfile`），构建和部�
 `sit-java-apisix-route`/`sit-java-apisix-route-2`这两个job的`kind_name`故意配成不同值（一个`StatefulSet`一个`Deployment`），用来在sit环境同时覆盖两条代码路径；但它们共享同一个k8s对象，实际行为和风险见根`README.md`对应小节，不要假设这两个job各自稳定存在独立的一份对象。
 
 跟dev/uat/prod一样，`Update values.yaml`阶段会从仓库根目录的`chart_templates/`共享目录拷贝chart文件后再渲染，详见根`README.md`的"`chart_templates/`"一节。
+
+### `CANARY_WEIGHT`参数（灰度发布，仅本job）
+
+Build with Parameters里新增的`CANARY_WEIGHT`留空即不开灰度，行为跟没有这个参数之前完全一样；填0-100的数字即开启灰度，把这个百分比的流量分给这次构建/`IMAGE_TAG`指定的版本，其余流量留在当前线上稳定版不动（稳定版镜像不会被这次构建覆盖）。要求线上已有一版正常部署过的稳定版本——不能在第一次部署时就直接带这个参数（会报错终止）。机制原理、晋升/回滚方式、v1已知简化和跟`sit-java-apisix-route-2`的交互风险，见根`README.md`"`sit`环境的灰度发布"一节。

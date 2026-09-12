@@ -110,7 +110,8 @@ node('ofc-hk-bastion') {
                              quickFilterEnabled: true,
                              listSize: '5',
                              requiredParameter: false],
-                            string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在BRANCH_TAG留空时生效。留空=部署:latest标签（推荐，日常部署不用管这个；每次构建job都会额外维护这个tag）；填了=部署这个指定的历史tag（用于回滚）')
+                            string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在BRANCH_TAG留空时生效。留空=部署:latest标签（推荐，日常部署不用管这个；每次构建job都会额外维护这个tag）；填了=部署这个指定的历史tag（用于回滚）'),
+                            string(name: 'CANARY_WEIGHT', defaultValue: '', description: '灰度发布用。留空=不开启灰度（默认，跟没有这个参数之前行为完全一致）；填0-100的数字=开启灰度，把这个百分比的流量分给这次构建/指定的新版本，其余流量留在当前线上稳定版不动。要求线上已经有一个正常运行的稳定版本——不能在第一次部署时就直接带这个参数')
                         ])
                     ])
                 }
@@ -148,6 +149,32 @@ node('ofc-hk-bastion') {
                     }
                 }
 
+                //灰度发布：CANARY_WEIGHT留空=不开启（canary_enabled=false，values.yaml里image走stable_image=这次构建的镜像，等价于没有这个功能之前的行为，不传参数也能正常部署）
+                //CANARY_WEIGHT填了=开启灰度：stable_image改查线上当前真实运行的镜像（保证helm upgrade不会连带把稳定版也升级掉），
+                //这次构建/指定的镜像只给canary_image（渲染成新增的canary Deployment），两者一起送进ApisixRoute按权重分流
+                stage('Resolve canary target') {
+                    env.canary_enabled = params.CANARY_WEIGHT?.trim() ? 'true' : 'false'
+                    env.canary_weight = params.CANARY_WEIGHT?.trim() ?: '0'
+                    env.canary_replicas = '1'
+                    env.canary_image = "${env.image_url}:${env.image_tag}"
+                    if (env.canary_enabled == 'true') {
+                        withCredentials([file(credentialsId: env.kubeconfig_credential_id, variable: 'KUBECONFIG')]) {
+                            def stableImage = ''
+                            try {
+                                stableImage = sh(script: "kubectl get ${env.kind_name} -n ${env.namespaces} ${env.app_name} -o jsonpath='{.spec.template.spec.containers[0].image}'", returnStdout: true).trim()
+                            } catch (e) {
+                                stableImage = ''
+                            }
+                            if (!stableImage) {
+                                error "灰度要求线上已有一个正常运行的稳定版本(${env.app_name})，请先不带CANARY_WEIGHT跑一次普通部署，再开启灰度"
+                            }
+                            env.stable_image = stableImage
+                        }
+                    } else {
+                        env.stable_image = "${env.image_url}:${env.image_tag}"
+                    }
+                }
+
                 // value.yaml deliver deployment full
                 stage('Update values.yaml') {
                     //实测确认：这台节点上"image_tag"/"commit_id"这两个变量名，无论env.X赋值还是withEnv显式注入，到shell里都会被别处(节点级/全局环境变量配置，profile脚本里未找到)覆盖成空值——
@@ -181,7 +208,7 @@ node('ofc-hk-bastion') {
                         sh '''
                             helm list -n ${namespaces}|grep ${app_name} &> /dev/null
                             helm upgrade ${app_name} --install -n ${namespaces} ./${chart_name}/${env_tier}
-                            if [ "${image_tag}" = "latest" ]; then
+                            if [ "${image_tag}" = "latest" ] && [ "${canary_enabled}" != "true" ]; then
                                 echo "IMAGE_TAG用的是浮动的:latest标签，Deployment里镜像字符串没变，helm upgrade不会自动触发滚动更新——手动rollout restart强制重新拉取"
                                 kubectl rollout restart ${kind_name} -n ${namespaces} ${app_name}
                             fi
