@@ -21,6 +21,8 @@
         "min_replicas": "1",
         "max_replicas": "100",
         "no_ingress": "false",
+        "websocket_port": "null",
+        "skywalking_enabled": "false",
     },
 
     "uat-java-apisix-route": {
@@ -32,8 +34,6 @@
         "actuator_port": "8080",
         "ingress_hosts": "apisix-route-test-uat.astroxs.com",
         "ingress_paths": "/*",
-        "websocket_port": "null",
-        "skywalking_enabled": "false",
         "namespaces": "apisix-route-test-uat",
     },
 }

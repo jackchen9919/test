@@ -22,5 +22,7 @@
         "min_replicas": "2",
         "max_replicas": "10",
         "no_ingress": "false",
+        "websocket_port": "null",
+        "skywalking_enabled": "false",
     },
 }

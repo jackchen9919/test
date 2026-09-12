@@ -63,11 +63,13 @@ node('ofc-hk-bastion') {
                     env.no_ingress = (code_info."${micro_key}".no_ingress) ?: (code_info.private.no_ingress)
                     env.node_ins = (code_info."${micro_key}".node_ins).toString()
                     env.maven_ins = (code_info."${micro_key}".maven_ins).toString()
-                    env.websocket_port = (code_info."${micro_key}".websocket_port).toString()
+                    //websocket_port/skywalking_enabled大多数服务都是"没有/不开"，per-job不填时吃private默认值(null/false)，
+                    //只有真用websocket或者想开skywalking的服务才需要在per-job块里显式覆盖
+                    env.websocket_port = (code_info."${micro_key}".websocket_port) ?: (code_info.private.websocket_port)
 
                     //skywalking_enabled跟project_type在deployment有一定关联
                     env.project_type = (code_info."${micro_key}".project_type).toString()
-                    env.skywalking_enabled = (code_info."${micro_key}".skywalking_enabled).toString()
+                    env.skywalking_enabled = (code_info."${micro_key}".skywalking_enabled) ?: (code_info.private.skywalking_enabled)
 
                     //判断提取
                     env.kind_name = (code_info."${micro_key}".kind_name) ?: (code_info.private.kind_name)
