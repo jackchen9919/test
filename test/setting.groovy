@@ -32,8 +32,9 @@
         "limits_mem": "2G",
         "requests_cpu": "0.1",
         "requests_mem": "0.2G",
-        //k8s工作负载类型，部署/rollout status都是操作这个kind
-        "kind_name": "deployment",
+        //k8s工作负载类型，helm渲染values.yaml的kind字段+kubectl rollout restart/status都用这个值。
+        //只能是精确的"Deployment"或"StatefulSet"(大小写敏感，chart模板里做的是字符串精确匹配，kubectl命令行倒是不区分大小写)
+        "kind_name": "Deployment",
         //HPA自动扩缩容的最小/最大副本数
         "min_replicas": "1",
         "max_replicas": "2",
@@ -61,6 +62,8 @@
         "ingress_hosts": "apisix-route-test.astroxs.com",
         "ingress_paths": "/*",
         "namespaces": "apisix-route-test",
+        //这个服务改成StatefulSet：要的是稳定pod身份+顺序启停，不是per-pod独立存储，NFS共享卷方案不用动
+        "kind_name": "StatefulSet",
     },
 
     "sit-java-apisix-route-2": {
@@ -76,5 +79,7 @@
         "ingress_hosts": "apisix-route-test.astroxs.com",
         "ingress_paths": "/*",
         "namespaces": "apisix-route-test",
+        //job2跟job1共享同一个k8s对象(同namespace+同app_name)，kind_name必须跟job1保持一致，否则两边kubectl rollout restart/status会因为实际资源类型对不上而报错
+        "kind_name": "StatefulSet",
     },
 }

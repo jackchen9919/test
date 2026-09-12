@@ -1,6 +1,7 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
-kind: Deployment
+# 取值必须是精确的"Deployment"或"StatefulSet"(大小写敏感，来自setting.groovy的kind_name字段)
+kind: ${kind_name}
 replicaCount: ${replicas}
 appname: ${app_name}
 version: ${commit_id}
