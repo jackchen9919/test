@@ -14,8 +14,8 @@
 //列表是从useRepository指定仓库实时git ls-remote拉的真实分支，既能选也能打字过滤。之前试过Active Choices的
 //Groovy脚本方案也能列真实分支，但要过Script Approval人工审批，每套Jenkins环境都要重新审一遍，运维成本更高；
 //git-parameter是原生参数类型，不用脚本、不用审批。useRepository不再单独写死一份仓库地址字符串——
-//跟"clone helm chart"阶段拉取本文件用的是同一个仓库，统一以test/setting.groovy的private.github_url为唯一数据源
-//（dev/uat没有自己的github_url，一直跨文件读test那份），在下面"Register parameters"阶段用env.github_url动态传入
+//改成从test/setting.groovy对应job块的github_url字段读取（per-job配置，dev没有自己的github_url，
+//一直跨文件读test那份），在下面"Register parameters"阶段用env.github_url动态传入
 node('ofc-hk-bastion') {
             try {
                 stage('clone helm chart') {
@@ -61,8 +61,8 @@ node('ofc-hk-bastion') {
                     def test_setting = readJSON text: readFile("astrox-helm-chart/test/setting.groovy")
                     env.test_namespaces = (test_setting."${test_micro_key}".namespaces) ?: (test_setting.private.namespaces)
                     //build相关参数（BRANCH_TAG填了才会用到），跟test共用一份配置，不在dev/setting.groovy里重复维护
-                    //github_url是所有job共用的同一个业务仓库地址，单一数据源放在test/setting.groovy的private里，不是per-job差异化配置
-                    env.github_url = (test_setting.private.github_url).toString()
+                    //github_url是这个服务构建的业务代码仓库地址，per-job配置，不放在private里（不同服务以后可能对应不同仓库）
+                    env.github_url = (test_setting."${test_micro_key}".github_url).toString()
                     env.node_ins = (test_setting."${test_micro_key}".node_ins).toString()
                     env.nodejs_version = (test_setting."${test_micro_key}".nodejs_version).toString()
                     env.aws_region = (code_info.private.aws_region).toString()

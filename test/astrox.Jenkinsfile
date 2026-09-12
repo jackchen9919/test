@@ -13,8 +13,9 @@
 //列表是从useRepository指定仓库实时git ls-remote拉的真实分支，既能选也能打字过滤。之前试过Active Choices的
 //Groovy脚本方案也能列真实分支，但要过Script Approval人工审批，每套Jenkins环境都要重新审一遍，运维成本更高；
 //git-parameter是原生参数类型，不用脚本、不用审批。useRepository不再单独写死一份仓库地址字符串——
-//跟"clone helm chart"阶段拉取本文件/setting.groovy用的是同一个仓库，统一以test/setting.groovy的private.github_url为唯一数据源，
-//在下面"Register parameters"阶段用env.github_url动态传入，避免两处配置各写一份、改仓库地址漏改一处
+//改成从test/setting.groovy对应job块的github_url字段读取（per-job配置，不同job/服务的业务代码可能来自不同仓库，
+//不是platform级共用属性，所以不放在private里；本仓库里的服务目前恰好都用同一个仓库），
+//在下面"Register parameters"阶段用env.github_url动态传入，避免Jenkinsfile里再单独写死一份
 //jenkins-sg.hichain.me 没装Kubernetes插件/没配置任何Cloud，只有一个静态节点（标签ofc-hk-bastion），agent直接跑在这个静态节点上，不再用K8s动态pod agent
 //该节点没装buildah，构建工具已改用docker（见test/pipline.groovy），节点上的jenkins用户已在docker组里
 node('ofc-hk-bastion') {
@@ -51,8 +52,8 @@ node('ofc-hk-bastion') {
                     env.kubeconfig_credential_id = (code_info.private.kubeconfig_credential_id).toString()
 
                     //build相关参数（BRANCH_TAG填了才会用到，留空时也一起读出来无妨）
-                    //github_url是所有job共用的同一个业务仓库地址，单一数据源放在private里，不是per-job差异化配置
-                    env.github_url = (code_info.private.github_url).toString()
+                    //github_url是这个job构建的业务代码仓库地址，per-job配置，不放在private里（不同job以后可能对应不同仓库）
+                    env.github_url = (code_info."${micro_key}".github_url).toString()
                     env.node_ins = (code_info."${micro_key}".node_ins).toString()
                     env.nodejs_version = (code_info."${micro_key}".nodejs_version).toString()
 

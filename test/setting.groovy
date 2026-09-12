@@ -23,13 +23,13 @@
         "min_replicas": "1",
         "max_replicas": "2",
         "no_ingress": "false",
-        //github_url是这个repo里所有job共用的同一个业务仓库地址（test/dev/uat三个环境目前也共用这一份），
-        //不是per-job差异化配置，所以放在private里做单一数据源，不在每个job块里各存一份；
-        //Jenkinsfile里BRANCH_TAG参数的useRepository字段也从这里动态读取，不再单独写死
-        "github_url": "https://github.com/jackchen9919/test.git",
     },
 
     "sit-java-apisix-route": {
+        //github_url是这个job构建的业务代码所在仓库，per-job配置(以后不同服务/不同job完全可能对应不同代码仓库，
+        //不是platform级共用属性，不适合放进private——只是现在这个仓库里的服务恰好都用同一个仓库)。
+        //Jenkinsfile里BRANCH_TAG参数的useRepository字段从这里动态读取，不再单独写死
+        "github_url": "https://github.com/jackchen9919/test.git",
         "node_ins": "npm run build",
         "nodejs_version": "NodeJS 16.14.1",
         "app_name": "apisix-route-test",
@@ -46,6 +46,7 @@
     },
 
     "sit-java-apisix-route-2": {
+        "github_url": "https://github.com/jackchen9919/test.git",
         "node_ins": "npm run build",
         "nodejs_version": "NodeJS 16.14.1",
         "app_name": "apisix-route-test",
