@@ -181,7 +181,9 @@ node('ofc-hk-bastion') {
                     //是变量名撞车，不是传值机制的问题（同一withEnv里另起一个不常见的名字能正常透传，验证过）。
                     //规避方式：shell侧只用不会撞车的变量名接住真实值，envsubst前先用sed把模板里的${image_tag}/${commit_id}占位符直接替换成字面值，
                     //这样就不需要环境变量名叫"image_tag"/"commit_id"，也就不会被覆盖；其余占位符仍交给envsubst按环境变量正常处理。
-                    withEnv(["IMAGE_TAG_VALUE=${env.image_tag}", "COMMIT_ID_VALUE=${env.commit_id ?: ''}"]) {
+                    //实测又发现："canary_weight"这个变量名也撞车（canary_enabled/canary_image/canary_replicas都能正常透传，唯独canary_weight到shell里是空值），
+                    //用同一套sed直接替换字面值的办法规避，不再深究这台节点上具体是哪里覆盖的（跟image_tag/commit_id当年一样没找到具体源头）。
+                    withEnv(["IMAGE_TAG_VALUE=${env.image_tag}", "COMMIT_ID_VALUE=${env.commit_id ?: ''}", "CANARY_WEIGHT_VALUE=${env.canary_weight}"]) {
                         sh '''
                             rm -rf ${chart_name}/${env_tier}/templates
                             mkdir -p ${chart_name}/${env_tier}/templates
@@ -189,8 +191,7 @@ node('ofc-hk-bastion') {
                             cp ${chart_name}/chart_templates/template_*.values.yaml ${chart_name}/${env_tier}/
                             cp ${chart_name}/chart_templates/templates/* ${chart_name}/${env_tier}/templates/
                             cd ${chart_name}/${env_tier}
-                            echo "DEBUG canary_enabled=[${canary_enabled}] canary_weight=[${canary_weight}] canary_image=[${canary_image}] canary_replicas=[${canary_replicas}]"
-                            sed -i "s|\\${image_tag}|${IMAGE_TAG_VALUE}|g; s|\\${commit_id}|${COMMIT_ID_VALUE}|g" template_${project_type}.values.yaml template.Chart.yaml
+                            sed -i "s|\\${image_tag}|${IMAGE_TAG_VALUE}|g; s|\\${commit_id}|${COMMIT_ID_VALUE}|g; s|\\${canary_weight}|${CANARY_WEIGHT_VALUE}|g" template_${project_type}.values.yaml template.Chart.yaml
                             envsubst < template_${project_type}.values.yaml > values.yaml
                             if [ "${websocket_port}" = 'null' ];then sed -i '/websocket/{N;N;d;}' values.yaml;fi
                             envsubst < template.Chart.yaml > Chart.yaml && rm -fr template_*
