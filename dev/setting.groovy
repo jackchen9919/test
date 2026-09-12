@@ -33,7 +33,6 @@
         "actuator_port": "8080",
         "ingress_hosts": "apisix-route-test-dev.astroxs.com",
         "ingress_paths": "/*",
-        "no_ingress": "false",
         "websocket_port": "null",
         "skywalking_enabled": "false",
         "namespaces": "apisix-route-test-dev",

@@ -5,34 +5,16 @@
 //是否走真实的checkout+build+push由BRANCH_TAG参数是否为空控制：填分支名=先构建新镜像再部署（走test/pipline.groovy）；留空=跳过构建直接部署，用IMAGE_TAG或:latest标签（走test/deploy_pipline.groovy）
 //结构照抄prod/astrox.Jenkinsfile的"构建+部署在同一个job"模式
 //BRANCH_TAG/IMAGE_TAG以前分别声明在test/pipline.groovy、test/deploy_pipline.groovy里（load()加载的子pipeline），
-//declarative的parameters{}块在load()子pipeline里不会注册成真正的job级参数（UI选不到）——统一收到这里的properties()才是唯一生效的参数声明，
+//declarative的parameters{}块在load()子pipeline里不会注册成真正的job级参数（UI选不到）——统一收到"Register parameters"阶段的properties()调用才是唯一生效的参数声明，
 //子文件里原来的parameters{}块已删除，避免两边各自调properties()互相覆盖、参数忽隐忽现
 //BRANCH_TAG/IMAGE_TAG都是"留空=默认行为，填了=手动覆盖"同一种模式：
 //BRANCH_TAG留空=不构建，直接部署（走IMAGE_TAG那套）；填分支名=用这个分支checkout+build+push再部署。
 //BRANCH_TAG用git-parameter插件做成可搜索下拉框（Jenkins已装此插件，跟dev-java-global-ex-msg等job用的是同一个），
-//列表是从下面useRepository写死的仓库实时git ls-remote拉的真实分支，既能选也能打字过滤。之前试过Active Choices的
+//列表是从useRepository指定仓库实时git ls-remote拉的真实分支，既能选也能打字过滤。之前试过Active Choices的
 //Groovy脚本方案也能列真实分支，但要过Script Approval人工审批，每套Jenkins环境都要重新审一遍，运维成本更高；
-//git-parameter是原生参数类型，不用脚本、不用审批。useRepository目前写死成业务仓库地址：test/dev/uat三个环境
-//目前共用同一个仓库，以后换仓库/加用别的仓库的新服务，要记得同步改这里。
-properties([
-    parameters([
-        [$class: 'GitParameterDefinition',
-         name: 'BRANCH_TAG',
-         type: 'PT_BRANCH',
-         description: '留空=不构建，直接部署（用IMAGE_TAG，或部署:latest标签）；选分支=用这个分支checkout业务代码+build+push新镜像再部署。下拉列表是实时拉取的真实分支，支持打字过滤；如果通过API等方式绕过下拉框传入了不存在的分支名，会在下面"Validate branch"阶段直接报错终止，不会跑到一半才失败',
-         branchFilter: 'origin/(.*)',
-         tagFilter: '*',
-         sortMode: 'DESCENDING_SMART',
-         defaultValue: '',
-         selectedValue: 'DEFAULT',
-         useRepository: 'https://github.com/jackchen9919/test.git',
-         quickFilterEnabled: true,
-         listSize: '5',
-         requiredParameter: false],
-        string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在BRANCH_TAG留空时生效。留空=部署:latest标签（推荐，日常部署不用管这个；每次构建job都会额外维护这个tag）；填了=部署这个指定的历史tag（用于回滚）')
-    ])
-])
-
+//git-parameter是原生参数类型，不用脚本、不用审批。useRepository不再单独写死一份仓库地址字符串——
+//跟"clone helm chart"阶段拉取本文件/setting.groovy用的是同一个仓库，统一以test/setting.groovy的private.github_url为唯一数据源，
+//在下面"Register parameters"阶段用env.github_url动态传入，避免两处配置各写一份、改仓库地址漏改一处
 //jenkins-sg.hichain.me 没装Kubernetes插件/没配置任何Cloud，只有一个静态节点（标签ofc-hk-bastion），agent直接跑在这个静态节点上，不再用K8s动态pod agent
 //该节点没装buildah，构建工具已改用docker（见test/pipline.groovy），节点上的jenkins用户已在docker组里
 node('ofc-hk-bastion') {
@@ -69,7 +51,8 @@ node('ofc-hk-bastion') {
                     env.kubeconfig_credential_id = (code_info.private.kubeconfig_credential_id).toString()
 
                     //build相关参数（BRANCH_TAG填了才会用到，留空时也一起读出来无妨）
-                    env.github_url = (code_info."${micro_key}".github_url).toString()
+                    //github_url是所有job共用的同一个业务仓库地址，单一数据源放在private里，不是per-job差异化配置
+                    env.github_url = (code_info.private.github_url).toString()
                     env.node_ins = (code_info."${micro_key}".node_ins).toString()
                     env.nodejs_version = (code_info."${micro_key}".nodejs_version).toString()
 
@@ -101,6 +84,32 @@ node('ofc-hk-bastion') {
                     env.log_nfs_server = (code_info."${micro_key}".log_nfs_server) ?: (code_info.private.log_nfs_server)
                     env.min_replicas = (code_info."${micro_key}".min_replicas) ?: (code_info.private.min_replicas)
                     env.max_replicas = (code_info."${micro_key}".max_replicas) ?: (code_info.private.max_replicas)
+                }
+
+                //properties()必须放在这里（Check info阶段之后），而不是文件最顶部：useRepository要动态传入
+                //env.github_url（上面Check info阶段刚从setting.groovy的private.github_url读出来），而env.github_url
+                //只有checkout到本地磁盘后才能读到，不可能在node()/checkout之前就拿到。Jenkins scripted pipeline的
+                //properties()调用生效时机只跟"这次build跑没跑到这一行"有关，跟它在脚本里的物理位置无关，所以挪到这里
+                //不影响"参数改动要等下一次build才生效"这个语义。
+                stage('Register parameters') {
+                    properties([
+                        parameters([
+                            [$class: 'GitParameterDefinition',
+                             name: 'BRANCH_TAG',
+                             type: 'PT_BRANCH',
+                             description: '留空=不构建，直接部署（用IMAGE_TAG，或部署:latest标签）；选分支=用这个分支checkout业务代码+build+push新镜像再部署。下拉列表是实时拉取的真实分支，支持打字过滤；如果通过API等方式绕过下拉框传入了不存在的分支名，会在下面"Validate branch"阶段直接报错终止，不会跑到一半才失败',
+                             branchFilter: 'origin/(.*)',
+                             tagFilter: '*',
+                             sortMode: 'DESCENDING_SMART',
+                             defaultValue: '',
+                             selectedValue: 'DEFAULT',
+                             useRepository: env.github_url,
+                             quickFilterEnabled: true,
+                             listSize: '5',
+                             requiredParameter: false],
+                            string(name: 'IMAGE_TAG', defaultValue: '', description: '仅在BRANCH_TAG留空时生效。留空=部署:latest标签（推荐，日常部署不用管这个；每次构建job都会额外维护这个tag）；填了=部署这个指定的历史tag（用于回滚）')
+                        ])
+                    ])
                 }
 
                 //BRANCH_TAG手动输入，可能打错字/分支已被删——build之前先用git ls-remote验证这个分支在业务仓库里真实存在，
