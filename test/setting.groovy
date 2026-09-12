@@ -42,4 +42,22 @@
         "skywalking_enabled": "false",
         "namespaces": "apisix-route-test",
     },
+
+    "sit-java-apisix-route-2": {
+        "github_url": "https://github.com/jackchen9919/test.git",
+        "node_ins": "npm run build",
+        "nodejs_version": "NodeJS 16.14.1",
+        "app_name": "apisix-route-test",
+        "project": "apisix-route-test",
+        "project_type": "nginx",
+        "replicas": "1",
+        "http_port": "8080",
+        "actuator_port": "8080",
+        "ingress_hosts": "apisix-route-test.astroxs.com",
+        "ingress_paths": "/*",
+        "no_ingress": "false",
+        "websocket_port": "null",
+        "skywalking_enabled": "false",
+        "namespaces": "apisix-route-test",
+    },
 }
