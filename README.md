@@ -23,6 +23,38 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
 
 这两者以前是同一个字段（`namespaces`），会导致"改了服务的k8s namespace，chart源码目录路径也跟着变"的错误联动，现已拆开。
 
+### `private` 字段速查（4个环境`setting.groovy`通用，含义一致）
+
+| 字段 | 说明 |
+|---|---|
+| `docker_repository_url` | ECR镜像仓库地址 |
+| `aws_region` | AWS区域 |
+| `jenkins_cloud` / `agent_image` / `deploy_agent_image` | 早期K8s动态pod agent方案的遗留字段；`jenkins-sg.hichain.me`现在用固定静态节点（`ofc-hk-bastion`）跑，代码里已经没有地方读这3个了，留着没用 |
+| `chart_name` | chart包的仓库目录名，`clone helm chart`那一步clone下来的文件夹叫这个名字 |
+| `namespaces` | k8s namespace默认值，per-job没单独配的话用这个 |
+| `env_tier` | 固定值，等于本环境目录名，只用来定位chart源码子目录和node taint/toleration，不可被服务级配置覆盖（跟`namespaces`的区别见上一节） |
+| `node_select` | k8s节点选择器 |
+| `kubeconfig_credential_id`（test/dev/uat）/ `KUBECONFIG`（prod） | 部署阶段kubectl/helm连哪个集群靠这个 |
+| `nfs_server` / `log_nfs_server` | 业务数据/日志的NFS挂载地址 |
+| `limits_cpu` / `limits_mem` / `requests_cpu` / `requests_mem` | 容器资源limit/request默认值 |
+| `kind_name` | k8s工作负载类型，helm渲染`values.yaml`的`kind`字段和`kubectl rollout restart/status`都用这个值。**取值只能是精确的`"Deployment"`或`"StatefulSet"`（大小写敏感——chart模板`{{- if eq .Values.kind "Deployment" }}`做的是字符串精确匹配；kubectl命令行本身不区分大小写，所以这个坑只会在helm渲染这一层炸，不会在kubectl这层炸，容易被忽略）** |
+| `min_replicas` / `max_replicas` | HPA自动扩缩容的最小/最大副本数 |
+| `no_ingress` | 是否不生成ingress（部分服务只用ApisixRoute不需要ingress） |
+| `websocket_port` | websocket端口，没有就是`"null"`；per-job不填时吃这个默认值，`values.yaml`里为`null`的话helm模板会把websocket那段配置整段删掉 |
+| `skywalking_enabled` | 是否开启skywalking链路追踪，per-job不填时吃这个默认值 |
+| `add_java_jar` / `gradle_ins`（test/dev/prod）| 拼进Dockerfile的COPY行 / Gradle构建命令模板 |
+
+**字段该放`private`还是per-job的判断标准**：不是看"现在值是否相同"，而是看"这个字段概念上归谁所有"——真正platform级、所有job/服务必然一样的（ECR地址、kubeconfig凭据、节点选择器）放`private`；本质上是"某个服务/job的属性"、只是碰巧现在大家的值相同的（比如`github_url`——不同服务以后大概率指向不同代码仓库）放per-job，哪怕现在看起来是重复的。
+
+### `sit` 环境下`kind_name`的Deployment/StatefulSet覆盖测试（重要，涉及共享对象的行为）
+
+`test/setting.groovy`里的两个job：`sit-java-apisix-route`（`kind_name: StatefulSet`）和`sit-java-apisix-route-2`（`kind_name: Deployment`），**故意配成不同的`kind_name`**，让sit环境同时覆盖到Deployment和StatefulSet两条代码路径（helm渲染分支 + `kubectl rollout restart/status`两种资源类型）。
+
+但这两个job的`namespaces`/`app_name`完全相同，**共享同一个真实k8s对象**（这是更早为测试Helm双触发竞态故意设计的，见下方"操作步骤"外的历史背景）。这意味着：
+- 这个对象实际当前是Deployment还是StatefulSet，**取决于哪个job最近一次跑成功**，不是"job1永远StatefulSet、job2永远Deployment"各自稳定存在两份对象。
+- 无论跑哪个job，只要它跟当前对象的实际kind不一致，`helm upgrade`就会删掉旧对象重建新kind的对象（Deployment↔StatefulSet没有原地转换），带来一次短暂的服务中断（`replicas:1`时尤其明显）。
+- 两个job如果时间点上跑得很接近，除了已知的"release already exists"竞态外，还可能出现"一个job刚把对象转成StatefulSet，另一个紧接着又把它转回Deployment"这种来回抖动，需要注意错开触发时间。
+
 ### `chart_templates/`（helm chart模版共享目录）
 
 `template.Chart.yaml`、`templates/*.yaml`、`templates/_helpers.tpl`、`template_<project_type>.values.yaml` 这些helm chart文件现在只在仓库根目录的 `chart_templates/` 里维护**一份**，不再在 `dev/`、`uat/`、`prod/`（以及新增的test部署job）各自重复一份——以前是逐环境手工复制维护，改一处要改三四处，还产生过`templates/hpa.yaml`内容重复粘贴、`values.yaml`镜像tag/ingress hosts格式不统一之类的真实bug。

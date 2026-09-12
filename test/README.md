@@ -27,6 +27,8 @@ test目录下只有**一个job**（`test/astrox.Jenkinsfile`），构建和部�
 | `namespaces`（可选） | 缺省沿用 `private.namespaces="test"` |
 | `min_replicas`/`max_replicas`（可选） | HPA副本数上下限，缺省沿用 `private.min_replicas`/`private.max_replicas` |
 
-`private`块里的部署相关字段：`env_tier`（固定`"test"`）、`deploy_agent_image`、`node_select`、`kubeconfig_credential_id`（Jenkins里"Secret file"类型凭据的ID，凭据内容是能访问目标EKS集群的kubeconfig文件——不是文件路径字符串，job里通过`withCredentials([file(...)])`把凭据内容落到临时文件再交给helm/kubectl）、`nfs_server`/`log_nfs_server`、`limits_cpu`/`limits_mem`/`requests_cpu`/`requests_mem`、`kind_name`、`min_replicas`/`max_replicas`。
+`private`块每个字段的说明见根目录`README.md`的"`private` 字段速查"表格；这里只补一点test特有的：`kubeconfig_credential_id`是Jenkins里"Secret file"类型凭据的ID，凭据内容是能访问目标EKS集群的kubeconfig文件本身（不是文件路径字符串），job里通过`withCredentials([file(...)])`把凭据内容落到临时文件再交给helm/kubectl。
+
+`sit-java-apisix-route`/`sit-java-apisix-route-2`这两个job的`kind_name`故意配成不同值（一个`StatefulSet`一个`Deployment`），用来在sit环境同时覆盖两条代码路径；但它们共享同一个k8s对象，实际行为和风险见根`README.md`对应小节，不要假设这两个job各自稳定存在独立的一份对象。
 
 跟dev/uat/prod一样，`Update values.yaml`阶段会从仓库根目录的`chart_templates/`共享目录拷贝chart文件后再渲染，详见根`README.md`的"`chart_templates/`"一节。

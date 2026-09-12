@@ -18,7 +18,6 @@
         "log_nfs_server": "fs-0e46303df2944183f.efs.us-west-2.amazonaws.com",
         "add_java_jar": "ADD {project}/build/libs/*.jar /app/app.jar",
         "gradle_ins": "${jradle_path}/bin/gradle ${project}:clean --refresh-dependencies ${project}:build -x test",
-        //只能是精确的"Deployment"或"StatefulSet"(大小写敏感，helm渲染values.yaml的kind字段做字符串精确匹配)
         "kind_name": "Deployment",
         "min_replicas": "2",
         "max_replicas": "10",

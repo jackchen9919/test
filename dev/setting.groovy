@@ -18,7 +18,6 @@
         "add_java_jar": "ADD {project}/build/libs/*.jar /app/app.jar",
         "gradle_ins": "${jradle_path}/bin/gradle ${project}:build --refresh-dependencies ${project}:build -x test",
         "gradle_sonar": "${jradle_path}/bin/gradle ${project}:build --refresh-dependencies ${project}:build jacocoTestReport sonar -Dsonar.projectKey=astrox-${app_name} -Dsonar.projectName=astrox-${app_name}  -Dsonar.host.url=https://sonar-ofc.hichain.me -Dsonar.login=${sonar_login} test",
-        //只能是精确的"Deployment"或"StatefulSet"(大小写敏感，helm渲染values.yaml的kind字段做字符串精确匹配)
         "kind_name": "Deployment",
         "min_replicas": "2",
         "max_replicas": "10",
