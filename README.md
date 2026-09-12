@@ -69,6 +69,8 @@ Jenkins agent 全部改成 K8s 动态pod agent（`podTemplate` + `node(POD_LABEL
 
 两种情况下，helm渲染出的manifest里都不再包含canary Deployment/Service（`apisixroute.yaml`收敛回单backend），Helm 3会自动把上一版渲染过、这一版不再渲染的资源从release里清理掉——不需要额外写清理脚本。
 
+**人工直连canary版本（不经过权重抽样）**：灰度开启期间（`canary.enabled: true`），`apisixroute.yaml`会额外多渲染一条路由——host是`canary-`前缀+原host（比如`canary-apisix-route-test.astroxs.com`），`backends`只写canary Service一个（100%流量，不带`weight`字段），专门给人工/自动化测试确定性地直接戳canary版本，不受权重抽样影响，不需要打几十次请求统计比例才能验证到canary。这条路由跟主路由用同一个guard（`canary.enabled=false`时不渲染，`canary` Deployment/Service不存在时这条路由存在也访问不到，不会报错，只是502/无后端）。**注意**：这只是APISIX网关层按Host header路由，不涉及DNS——`curl`/测试脚本用`-H "Host: canary-xxx"`或`--resolve`直接能用；如果要用浏览器真实访问这个域名，需要另外在DNS上加一条解析记录指到同一个APISIX网关入口，这部分DNS配置不在这个仓库/Jenkins的管辖范围内，需要自行确认。
+
 **v1已知的简化/边界（不是遗漏）**：
 - canary固定是`kind: Deployment`，不跟随线上稳定版当前的`kind_name`做StatefulSet canary。
 - canary workload跳过skywalking initContainer和nfs/log_nfs挂载，只覆盖sit这种nginx纯静态场景；以后要在其它project_type上开灰度，得先补齐这部分。

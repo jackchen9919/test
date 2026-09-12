@@ -38,5 +38,31 @@ spec:
               X-Forwarded-Port: "443"
               X-Forwarded-Proto: "https"
               X-Forwarded-Ssl: "on"
+  {{- if $.Values.canary }}
+  {{- if $.Values.canary.enabled }}
+  - name: {{ $.Values.appname }}-{{ $i }}-canary-direct
+    match:
+      hosts:
+        - canary-{{ $host }}
+      paths:
+        {{- range $path := $.Values.ingress.paths }}
+        - {{ $path }}
+        {{- end }}
+    backends:
+      - serviceName: {{ $.Values.appname }}-canary
+        servicePort: {{ $.Values.probe.port }}
+    plugins:
+      - name: proxy-rewrite
+        enable: true
+        config:
+          host: {{ $host }}
+          headers:
+            set:
+              X-Forwarded-Host: {{ $host }}
+              X-Forwarded-Port: "443"
+              X-Forwarded-Proto: "https"
+              X-Forwarded-Ssl: "on"
+  {{- end }}
+  {{- end }}
   {{- end }}
 {{- end }}
