@@ -189,6 +189,7 @@ node('ofc-hk-bastion') {
                             cp ${chart_name}/chart_templates/template_*.values.yaml ${chart_name}/${env_tier}/
                             cp ${chart_name}/chart_templates/templates/* ${chart_name}/${env_tier}/templates/
                             cd ${chart_name}/${env_tier}
+                            echo "DEBUG canary_enabled=[${canary_enabled}] canary_weight=[${canary_weight}] canary_image=[${canary_image}] canary_replicas=[${canary_replicas}]"
                             sed -i "s|\\${image_tag}|${IMAGE_TAG_VALUE}|g; s|\\${commit_id}|${COMMIT_ID_VALUE}|g" template_${project_type}.values.yaml template.Chart.yaml
                             envsubst < template_${project_type}.values.yaml > values.yaml
                             if [ "${websocket_port}" = 'null' ];then sed -i '/websocket/{N;N;d;}' values.yaml;fi
